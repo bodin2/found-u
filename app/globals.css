@@ -1,0 +1,291 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* LINE App Style Theme - Unified Color System */
+:root {
+  /* Primary Colors - LINE Green */
+  --line-green: #06C755;
+  --line-green-hover: #05b34d;
+  --line-green-light: #e8f8ef;
+  --line-green-dark: #049c42;
+
+  /* Background Colors */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F7F8FA;
+  --bg-tertiary: #ECEEF1;
+  --bg-card: #FFFFFF;
+
+  /* Text Colors */
+  --text-primary: #191919;
+  --text-secondary: #6B7280;
+  --text-tertiary: #9CA3AF;
+  --text-muted: #B4B4B4;
+
+  /* Border Colors */
+  --border-light: #E5E7EB;
+  --border-medium: #D1D5DB;
+
+  /* Status Colors */
+  --status-error: #EF4444;
+  --status-error-light: #FEF2F2;
+  --status-warning: #F59E0B;
+  --status-warning-light: #FFFBEB;
+  --status-success: #06C755;
+  --status-success-light: #e8f8ef;
+  --status-info: #3B82F6;
+  --status-info-light: #EFF6FF;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+}
+
+/* Dark Theme */
+.dark {
+  --line-green: #06C755;
+  --line-green-hover: #0ad962;
+  --line-green-light: rgba(6, 199, 85, 0.15);
+  --line-green-dark: #05b34d;
+
+  --bg-primary: #111111;
+  --bg-secondary: #0A0A0A;
+  --bg-tertiary: #1A1A1A;
+  --bg-card: #171717;
+
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  --text-muted: #4B5563;
+
+  --border-light: #262626;
+  --border-medium: #374151;
+
+  --status-error: #F87171;
+  --status-error-light: rgba(239, 68, 68, 0.15);
+  --status-warning: #FBBF24;
+  --status-warning-light: rgba(245, 158, 11, 0.15);
+  --status-success: #34D399;
+  --status-success-light: rgba(6, 199, 85, 0.15);
+  --status-info: #60A5FA;
+  --status-info-light: rgba(59, 130, 246, 0.15);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+@theme inline {
+  --color-line-green: var(--line-green);
+  --color-line-green-hover: var(--line-green-hover);
+  --color-line-green-light: var(--line-green-light);
+  --color-line-green-dark: var(--line-green-dark);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-card: var(--bg-card);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-muted: var(--text-muted);
+  --color-border-light: var(--border-light);
+  --color-border-medium: var(--border-medium);
+  --font-sans: var(--font-kanit);
+}
+
+/* Global Styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: 'Kanit', sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Button Base Styles */
+.btn-primary {
+  background-color: var(--line-green);
+  color: white;
+  border-radius: 9999px;
+  padding: 0.875rem 2rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: var(--line-green-hover);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-radius: 9999px;
+  padding: 0.875rem 2rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background-color: #e5e5e5;
+}
+
+.dark .btn-secondary:hover {
+  background-color: #3a3a3a;
+}
+
+/* Card Styles */
+.card {
+  background: var(--bg-primary);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-sm);
+  padding: 1.25rem;
+}
+
+.dark .card {
+  background: var(--bg-tertiary);
+}
+
+/* Input Styles */
+.input-line {
+  background-color: #f5f5f5;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.875rem 1rem;
+  width: 100%;
+  font-size: 1rem;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.dark .input-line {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.input-line:focus {
+  outline: none;
+  background-color: #eeeeee;
+  box-shadow: 0 0 0 2px var(--line-green-light);
+}
+
+.dark .input-line:focus {
+  background-color: #333333;
+}
+
+.input-line::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Status Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.badge-searching {
+  background-color: #f5f5f5;
+  color: var(--text-secondary);
+}
+
+.badge-found {
+  background-color: var(--line-green-light);
+  color: var(--line-green);
+}
+
+.badge-claimed {
+  background-color: #e0f2fe;
+  color: #0284c7;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(6, 199, 85, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(6, 199, 85, 0);
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2s infinite;
+}
+
+/* Safe area for mobile devices */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0);
+}

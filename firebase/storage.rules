@@ -1,0 +1,34 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Settings (OG Image) - Admin only write
+    match /settings/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Found Items & Lost Items Images
+    match /found-items/{itemId}/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Avatars
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}

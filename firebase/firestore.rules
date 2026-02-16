@@ -1,0 +1,168 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===== Helper Functions =====
+    
+    // ตรวจสอบว่า login แล้วหรือยัง
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // ตรวจสอบว่าเป็น Admin หรือไม่ (ตรวจสอบจาก Firestore users collection)
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // ตรวจสอบว่าข้อมูลมี fields ที่จำเป็นครบ
+    function hasRequiredLostFields() {
+      let required = ['itemName', 'category', 'locationLost', 'contacts', 'trackingCode', 'status'];
+      return request.resource.data.keys().hasAll(required);
+    }
+    
+    function hasRequiredFoundFields() {
+      let required = ['description', 'locationFound', 'dropOffLocation', 'trackingCode', 'status'];
+      return request.resource.data.keys().hasAll(required);
+    }
+    
+    // ===== Lost Items Collection =====
+    match /lostItems/{itemId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+
+      // ต้อง login และมีข้อมูลครบถึงจะสร้างได้
+      allow create: if isAuthenticated() &&
+                       hasRequiredLostFields() &&
+                       request.resource.data.status == 'searching';
+
+      // อัปเดต/ลบได้เฉพาะ Admin
+      allow update, delete: if isAdmin();
+    }
+    
+    // ===== Found Items Collection =====
+    match /foundItems/{itemId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+
+      // ต้อง login และมีข้อมูลครบถึงจะสร้างได้
+      allow create: if isAuthenticated() &&
+                       hasRequiredFoundFields() &&
+                       request.resource.data.status == 'found';
+
+      // อัปเดต/ลบได้เฉพาะ Admin
+      allow update, delete: if isAdmin();
+    }
+    
+    // ===== Categories Collection (Admin Only) =====
+    match /categories/{categoryId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+      
+      // เฉพาะ Admin เท่านั้นที่สร้าง/แก้ไข/ลบได้
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ===== Drop-off Locations Collection (Admin Only) =====
+    match /dropOffLocations/{locationId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+      
+      // เฉพาะ Admin เท่านั้นที่สร้าง/แก้ไข/ลบได้
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ===== Locations Collection (Admin Only) =====
+    match /locations/{locationId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+      
+      // เฉพาะ Admin เท่านั้นที่สร้าง/แก้ไข/ลบได้
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ===== Contact Types Collection (Admin Only) =====
+    match /contactTypes/{contactTypeId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+      
+      // เฉพาะ Admin เท่านั้นที่สร้าง/แก้ไข/ลบได้
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ===== Activity Logs Collection (Admin Only) =====
+    match /activityLogs/{logId} {
+      // เฉพาะ Admin อ่านได้
+      allow read: if isAdmin();
+      
+      // ระบบสร้างได้ (ทุกคนที่ login)
+      allow create: if isAuthenticated();
+      
+      // ห้ามแก้ไขหรือลบ
+      allow update, delete: if false;
+    }
+    
+    // ===== Error Logs Collection =====
+    match /errorLogs/{logId} {
+      // เฉพาะ Admin อ่านได้
+      allow read: if isAdmin();
+      
+      // ทุกคนที่ login สามารถสร้าง error log ได้
+      allow create: if isAuthenticated();
+      
+      // เฉพาะ Admin แก้ไขได้ (mark as resolved)
+      allow update: if isAdmin();
+      
+      // ห้ามลบ
+      allow delete: if false;
+    }
+    
+    // ===== Users Collection =====
+    match /users/{userId} {
+      // ทุกคนอ่านได้ (เพื่อเช็ค role)
+      allow read: if true;
+      
+      // สร้างได้เฉพาะเจ้าของ
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == userId &&
+                       request.resource.data.role == 'user'; // ไม่สามารถตั้งตัวเองเป็น admin ได้
+      
+      // อัปเดตได้เฉพาะเจ้าของ (แต่ห้ามเปลี่ยน role) หรือ Admin (เปลี่ยนได้ทุกอย่าง)
+      allow update: if isAuthenticated() && (
+                       (request.auth.uid == userId && 
+                        request.resource.data.role == resource.data.role) || // เจ้าของห้ามเปลี่ยน role
+                       isAdmin() // Admin เปลี่ยนได้ทุกอย่าง
+                    );
+      
+      // ลบได้เฉพาะ Admin
+      allow delete: if isAdmin();
+    }
+    
+    // ===== Settings Collection (Admin Only) =====
+    match /settings/{settingId} {
+      // ทุกคนอ่านได้
+      allow read: if true;
+      
+      // เฉพาะ Admin เท่านั้นที่สร้าง/แก้ไข/ลบได้
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ===== AI Usage Collection (Rate Limiting) =====
+    match /aiUsage/{usageId} {
+      // อ่านได้เฉพาะ Admin หรือเจ้าของข้อมูล
+      allow read: if isAuthenticated() && (
+                     isAdmin() || 
+                     resource.data.userId == request.auth.uid
+                  );
+      
+      // สร้างได้เฉพาะผู้ใช้ที่ login และต้องเป็นข้อมูลของตัวเอง
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // ห้ามแก้ไขหรือลบ
+      allow update, delete: if false;
+    }
+  }
+}
