@@ -119,8 +119,8 @@
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/mdccvii/scfondue.git
-cd scfondue
+git clone https://github.com/bodin2/found-u.git
+cd found-u
 ```
 
 ### 2. ติดตั้ง Dependencies
