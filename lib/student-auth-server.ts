@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import type { NextRequest } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import type {
@@ -478,12 +479,23 @@ export async function importStudentRows(
   return summary;
 }
 
-export function getRpId(): string {
-  const url = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
-  if (url) {
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/:\d+$/, "").replace(/^www\./, "");
+}
+
+export function getRpId(request?: NextRequest): string {
+  const forwardedHost = request?.headers.get("x-forwarded-host");
+  const host = request?.headers.get("host");
+  const requestHost = forwardedHost || host;
+  if (requestHost) {
+    return normalizeHost(requestHost);
+  }
+
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+  if (envUrl) {
     try {
-      const host = url.startsWith("http") ? new URL(url).hostname : url;
-      return host.replace(/^www\./, "");
+      const hostFromUrl = envUrl.startsWith("http") ? new URL(envUrl).hostname : envUrl;
+      return normalizeHost(hostFromUrl);
     } catch {
       return "localhost";
     }
@@ -491,7 +503,15 @@ export function getRpId(): string {
   return "localhost";
 }
 
-export function getOrigin(): string {
+export function getOrigin(request?: NextRequest): string {
+  const forwardedHost = request?.headers.get("x-forwarded-host");
+  const host = request?.headers.get("host");
+  const requestHost = forwardedHost || host;
+  if (requestHost) {
+    const proto = request?.headers.get("x-forwarded-proto") || "https";
+    return `${proto}://${normalizeHost(requestHost)}`;
+  }
+
   const url = process.env.NEXT_PUBLIC_APP_URL;
   if (url) return url.replace(/\/$/, "");
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;

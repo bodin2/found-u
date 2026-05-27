@@ -6,7 +6,7 @@ import { DataProvider } from "@/contexts/DataContext";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import AuthGuard from "@/components/auth/auth-guard";
-import { getAppSettings } from "@/lib/firestore";
+import { adminDb } from "@/lib/firebase-admin";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";
 
 // โหลดฟอนต์ Kanit สำหรับภาษาไทย
@@ -17,12 +17,24 @@ const kanit = Kanit({
   display: "swap",
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const settings = await getAppSettings().catch(() => DEFAULT_APP_SETTINGS);
+export const revalidate = 0;
 
-  const title = settings.ogTitle || DEFAULT_APP_SETTINGS.ogTitle || "foundu.forum";
-  const description = settings.ogDescription || DEFAULT_APP_SETTINGS.ogDescription || "ระบบแจ้งของหาย-ของเจอ";
-  const images = settings.ogImage ? [settings.ogImage] : [];
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await adminDb
+    .collection("settings")
+    .doc("appSettings")
+    .get()
+    .then((doc) => doc.data() || {})
+    .catch(() => ({} as Record<string, unknown>));
+
+  const title =
+    (settings.ogTitle as string | undefined) || DEFAULT_APP_SETTINGS.ogTitle || "foundu.forum";
+  const description =
+    (settings.ogDescription as string | undefined) ||
+    DEFAULT_APP_SETTINGS.ogDescription ||
+    "ระบบแจ้งของหาย-ของเจอ";
+  const ogImage = settings.ogImage as string | undefined;
+  const images = ogImage ? [ogImage] : [];
 
   return {
     title,

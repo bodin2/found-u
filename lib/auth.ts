@@ -5,6 +5,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInWithCustomToken,
+  unlink,
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -43,7 +44,7 @@ export async function signInWithGoogle() {
     const result = await signInWithPopup(auth, googleProvider);
     isSigningIn = false;
     return { user: result.user, error: null };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error signing in with Google:', error);
     isSigningIn = false;
     return { user: null, error: error as Error };
@@ -75,6 +76,25 @@ export async function linkGoogleToCurrentUser() {
     return {
       user: null,
       error: new Error(err.message || "เชื่อมบัญชี Google ไม่สำเร็จ"),
+    };
+  }
+}
+
+export async function unlinkGoogleFromCurrentUser() {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    return { user: null, error: new Error("กรุณาเข้าสู่ระบบก่อน") };
+  }
+
+  try {
+    const user = await unlink(currentUser, "google.com");
+    return { user, error: null };
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
+    console.error("Error unlinking Google:", error);
+    return {
+      user: null,
+      error: new Error(err.message || "ยกเลิกการเชื่อม Google ไม่สำเร็จ"),
     };
   }
 }

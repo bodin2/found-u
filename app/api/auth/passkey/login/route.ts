@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     if (discoverable) {
       const options = await generateAuthenticationOptions({
-        rpID: getRpId(),
+        rpID: getRpId(request),
         userVerification: "preferred",
       });
 
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const options = await generateAuthenticationOptions({
-      rpID: getRpId(),
+      rpID: getRpId(request),
       allowCredentials: account.passkeyCredentials.map((c) => ({
         id: c.credentialId,
         transports: c.transports as AuthenticatorTransport[] | undefined,
@@ -104,8 +104,8 @@ export async function PUT(request: NextRequest) {
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: stored.challenge,
-      expectedOrigin: getOrigin(),
-      expectedRPID: getRpId(),
+      expectedOrigin: getOrigin(request),
+      expectedRPID: getRpId(request),
       credential: {
         id: credential.credentialId,
         publicKey: Buffer.from(credential.publicKey, "base64url"),

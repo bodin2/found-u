@@ -71,6 +71,49 @@ export async function postConnectGoogle(token: string) {
   return data as { success: boolean; email: string };
 }
 
+export async function postDisconnectGoogle(token: string) {
+  const res = await fetch("/api/auth/disconnect-google", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "ยกเลิกการเชื่อม Google ไม่สำเร็จ");
+  return data as { success: boolean };
+}
+
+export async function postVerifyPassword(token: string, password: string) {
+  const res = await fetch("/api/auth/verify-password", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "ยืนยันรหัสผ่านไม่สำเร็จ");
+  return data as { success: boolean };
+}
+
+export async function getPasskeyStatus(token: string) {
+  const res = await fetch("/api/auth/passkey/register", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "โหลดสถานะ Passkey ไม่สำเร็จ");
+  return data as { hasPasskey: boolean; count: number };
+}
+
+export async function deletePasskey(token: string) {
+  const res = await fetch("/api/auth/passkey/register", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "ลบ Passkey ไม่สำเร็จ");
+  return data as { success: boolean };
+}
+
 export async function postLinkGoogle(token: string, studentId: string, password: string) {
   const res = await fetch("/api/auth/link-google", {
     method: "POST",

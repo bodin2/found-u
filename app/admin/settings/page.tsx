@@ -28,7 +28,15 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 import { getAllUsers, getAppSettings, updateAppSettings, timestampToDate } from "@/lib/firestore";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, writeBatch, doc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  writeBatch,
+  doc,
+  serverTimestamp,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from "firebase/firestore";
 import { uploadImage, compressImage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { AppUser, AppSettings } from "@/lib/types";
@@ -253,7 +261,7 @@ export default function AdminSettingsPage() {
         const text = e.target?.result as string;
         const rows = text.split("\n").slice(1); // Skip header
 
-        const batch = writeBatch(db);
+        let batch = writeBatch(db);
         let batchCount = 0;
         const BATCH_LIMIT = 400; // Commit every 400 ops (limit is 500)
 
@@ -309,6 +317,7 @@ export default function AdminSettingsPage() {
           batchCount++;
           if (batchCount >= BATCH_LIMIT) {
             await batch.commit();
+            batch = writeBatch(db);
             batchCount = 0;
           }
         }
@@ -362,7 +371,7 @@ export default function AdminSettingsPage() {
     setProcessingData(true);
 
     try {
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
       const lostSnapshot = await getDocs(collection(db, "lostItems"));
       const foundSnapshot = await getDocs(collection(db, "foundItems"));
 
@@ -370,12 +379,13 @@ export default function AdminSettingsPage() {
       const BATCH_LIMIT = 400;
 
       // Function to process deletions in chunks
-      const deleteChunks = async (docs: any[]) => {
+      const deleteChunks = async (docs: QueryDocumentSnapshot<DocumentData>[]) => {
         for (const doc of docs) {
           batch.delete(doc.ref);
           count++;
           if (count >= BATCH_LIMIT) {
             await batch.commit();
+            batch = writeBatch(db);
             count = 0;
           }
         }

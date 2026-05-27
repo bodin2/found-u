@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const account = await getStudentAccount(studentId);
   if (!account) return NextResponse.json({ error: "ไม่พบบัญชีนักเรียน" }, { status: 404 });
 
-  const rpID = getRpId();
+  const rpID = getRpId(request);
   const options = await generateRegistrationOptions({
     rpName: "Found-U",
     rpID,
@@ -66,8 +66,8 @@ export async function PUT(request: NextRequest) {
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge: stored.challenge,
-      expectedOrigin: getOrigin(),
-      expectedRPID: getRpId(),
+      expectedOrigin: getOrigin(request),
+      expectedRPID: getRpId(request),
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -107,4 +107,46 @@ export async function PUT(request: NextRequest) {
     console.error("Passkey register verify error:", err);
     return NextResponse.json({ error: "ลงทะเบียน PassKey ไม่สำเร็จ" }, { status: 500 });
   }
+}
+
+export async function GET(request: NextRequest) {
+  const authUser = await verifyAuthRequest(request);
+  if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
+  const studentId = userDoc.data()?.studentId as string | undefined;
+  if (!studentId) return NextResponse.json({ hasPasskey: false, count: 0 });
+
+  const account = await getStudentAccount(studentId);
+  const count = account?.passkeyCredentials?.length ?? 0;
+  return NextResponse.json({ hasPasskey: count > 0, count });
+}
+
+export async function DELETE(request: NextRequest) {
+  const authUser = await verifyAuthRequest(request);
+  if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
+  const studentId = userDoc.data()?.studentId as string | undefined;
+  if (!studentId) {
+    return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
+  }
+
+  await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(normalizeStudentId(studentId)).set(
+    {
+      passkeyCredentials: [],
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  await adminDb.collection("users").doc(authUser.uid).set(
+    {
+      authMethods: FieldValue.arrayRemove("passkey"),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return NextResponse.json({ success: true });
 }

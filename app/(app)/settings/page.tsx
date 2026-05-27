@@ -13,6 +13,8 @@ import {
   Save,
   Mail,
   Hash,
+  Link2,
+  Unlink2,
 } from "lucide-react";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useAuth } from "@/contexts/auth-context";
@@ -23,8 +25,14 @@ import {
   getUserShownName,
   hasGoogleAccountLinked,
 } from "@/lib/user-display";
-import { linkGoogleToCurrentUser } from "@/lib/auth";
-import { postConnectGoogle } from "@/lib/student-auth-api";
+import { linkGoogleToCurrentUser, unlinkGoogleFromCurrentUser } from "@/lib/auth";
+import {
+  deletePasskey,
+  getPasskeyStatus,
+  postConnectGoogle,
+  postDisconnectGoogle,
+  postVerifyPassword,
+} from "@/lib/student-auth-api";
 import { StudentAppShell } from "@/components/layout/student-app-shell";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
@@ -33,7 +41,12 @@ import { cn } from "@/lib/utils";
 import { slideUp } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
-type SettingsTab = "profile" | "security";
+type SettingsTab = "profile" | "security" | "connections";
+type ConnectionAction =
+  | "connectGoogle"
+  | "disconnectGoogle"
+  | "addPasskey"
+  | "removePasskey";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -54,6 +67,12 @@ export default function SettingsPage() {
   const [googleLinking, setGoogleLinking] = useState(false);
   const [googleMessage, setGoogleMessage] = useState<string | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [passkeyRegistered, setPasskeyRegistered] = useState(false);
+  const [passkeyCount, setPasskeyCount] = useState(0);
+  const [passwordPromptOpen, setPasswordPromptOpen] = useState(false);
+  const [passwordForAction, setPasswordForAction] = useState("");
+  const [passwordAction, setPasswordAction] = useState<ConnectionAction | null>(null);
+  const [passwordChecking, setPasswordChecking] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -66,6 +85,22 @@ export default function SettingsPage() {
       setShownName(appUser.shownName?.trim() || appUser.nickname?.trim() || "");
     }
   }, [appUser]);
+
+  useEffect(() => {
+    const loadPasskeyStatus = async () => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const status = await getPasskeyStatus(token);
+        setPasskeyRegistered(status.hasPasskey);
+        setPasskeyCount(status.count);
+      } catch {
+        setPasskeyRegistered(false);
+        setPasskeyCount(0);
+      }
+    };
+    void loadPasskeyStatus();
+  }, [user, appUser?.authMethods]);
 
   const saveShownName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,6 +186,9 @@ export default function SettingsPage() {
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(verifyData.error || "ลงทะเบียน PassKey ไม่สำเร็จ");
       setSecurityMessage("ลงทะเบียน PassKey สำเร็จ");
+      setPasskeyRegistered(true);
+      setPasskeyCount((prev) => Math.max(1, prev + 1));
+      await refreshSession();
     } catch (err) {
       setSecurityError(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");
     } finally {
@@ -195,6 +233,82 @@ export default function SettingsPage() {
     }
   };
 
+  const handleDisconnectGoogle = async () => {
+    if (!user) return;
+    setGoogleLinking(true);
+    setGoogleError(null);
+    setGoogleMessage(null);
+    try {
+      const { error } = await unlinkGoogleFromCurrentUser();
+      if (error) throw error;
+      const token = await user.getIdToken(true);
+      await postDisconnectGoogle(token);
+      await refreshSession();
+      setGoogleMessage("ยกเลิกการเชื่อม Google สำเร็จ");
+    } catch (err) {
+      setGoogleError(err instanceof Error ? err.message : "ยกเลิกการเชื่อม Google ไม่สำเร็จ");
+    } finally {
+      setGoogleLinking(false);
+    }
+  };
+
+  const handleRemovePasskey = async () => {
+    if (!user) return;
+    setSecurityLoading(true);
+    setSecurityError(null);
+    setSecurityMessage(null);
+    try {
+      const token = await user.getIdToken();
+      await deletePasskey(token);
+      await refreshSession();
+      setPasskeyRegistered(false);
+      setPasskeyCount(0);
+      setSecurityMessage("ลบ PassKey สำเร็จ");
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : "ลบ PassKey ไม่สำเร็จ");
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  const openPasswordPrompt = (action: ConnectionAction) => {
+    setPasswordAction(action);
+    setPasswordForAction("");
+    setPasswordPromptOpen(true);
+  };
+
+  const handleConfirmedConnectionAction = async () => {
+    if (!user || !passwordAction) return;
+    setPasswordChecking(true);
+    try {
+      const token = await user.getIdToken();
+      await postVerifyPassword(token, passwordForAction);
+      setPasswordPromptOpen(false);
+      setPasswordForAction("");
+
+      switch (passwordAction) {
+        case "connectGoogle":
+          await handleConnectGoogle();
+          break;
+        case "disconnectGoogle":
+          await handleDisconnectGoogle();
+          break;
+        case "addPasskey":
+          await registerPasskey();
+          break;
+        case "removePasskey":
+          await handleRemovePasskey();
+          break;
+      }
+    } catch (err) {
+      setSecurityError(err instanceof Error ? err.message : "ยืนยันรหัสผ่านไม่สำเร็จ");
+      setGoogleError(err instanceof Error ? err.message : "ยืนยันรหัสผ่านไม่สำเร็จ");
+    } finally {
+      setPasswordChecking(false);
+      setPasswordAction(null);
+    }
+  };
+
   const profilePanel = (
     <section className="bg-bg-card rounded-2xl border border-border-light p-5 shadow-card space-y-5">
       <div className="flex items-center gap-4">
@@ -212,7 +326,7 @@ export default function SettingsPage() {
             <p className="text-sm text-text-secondary truncate">{publicEmail}</p>
           ) : (
             <p className="text-xs text-text-tertiary mt-0.5">
-              ยังไม่มีอีเมล — เชื่อม Google เพื่อใช้อีเมลส่วนตัว
+              ยังไม่มีอีเมล — เชื่อมต่อบัญชี Google ได้ที่หน้า "การเชื่อมบัญชี"
             </p>
           )}
           {!hasGooglePhoto && (
@@ -256,24 +370,6 @@ export default function SettingsPage() {
           บันทึกชื่อที่แสดง
         </button>
       </form>
-
-      {!hasGoogle && (
-        <button
-          type="button"
-          onClick={handleConnectGoogle}
-          disabled={googleLinking}
-          className={cn(
-            "w-full flex items-center justify-center gap-3 py-2.5 rounded-xl",
-            "border border-border-light bg-bg-primary font-medium text-sm",
-            "hover:bg-bg-secondary transition-colors disabled:opacity-50"
-          )}
-        >
-          {googleLinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />}
-          เชื่อมต่อบัญชี Google
-        </button>
-      )}
-      {googleMessage && <p className="text-xs text-green-600">{googleMessage}</p>}
-      {googleError && <p className="text-xs text-red-600">{googleError}</p>}
 
       <CollapsibleSection title="ข้อมูลบัญชี" defaultOpen={false}>
         <dl className="space-y-3 text-sm">
@@ -363,22 +459,71 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      <div className="border-t border-border-light pt-4 pb-2">
-        <p className="text-sm font-medium text-text-primary mb-3">PassKey</p>
+    </section>
+  );
+
+  const connectionsPanel = (
+    <section className="bg-bg-card rounded-2xl border border-border-light p-5 shadow-card space-y-4">
+      <div className="rounded-xl border border-border-light p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-medium text-text-primary">บัญชี Google</p>
+            <p className="text-xs text-text-secondary">
+              {hasGoogle ? "เชื่อมบัญชีแล้ว" : "ยังไม่ได้เชื่อมบัญชี"}
+            </p>
+          </div>
+          <GoogleIcon />
+        </div>
         <button
           type="button"
-          onClick={registerPasskey}
-          disabled={securityLoading}
+          onClick={() => openPasswordPrompt(hasGoogle ? "disconnectGoogle" : "connectGoogle")}
+          disabled={googleLinking || passwordChecking}
+          className="w-full py-2.5 border border-border-light rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-bg-secondary transition-colors"
+        >
+          {googleLinking ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : hasGoogle ? (
+            <Unlink2 className="w-4 h-4" />
+          ) : (
+            <Link2 className="w-4 h-4" />
+          )}
+          {hasGoogle ? "ยกเลิกการเชื่อม Google" : "เชื่อมบัญชี Google"}
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-border-light p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-medium text-text-primary">PassKey</p>
+            <p className="text-xs text-text-secondary">
+              {passkeyRegistered
+                ? `ลงทะเบียนแล้ว ${passkeyCount} รายการ`
+                : "ยังไม่ได้ลงทะเบียน"}
+            </p>
+          </div>
+          <Fingerprint className="w-5 h-5 text-text-secondary" />
+        </div>
+        <button
+          type="button"
+          onClick={() => openPasswordPrompt(passkeyRegistered ? "removePasskey" : "addPasskey")}
+          disabled={securityLoading || passwordChecking}
           className="w-full py-2.5 border border-border-light rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-bg-secondary transition-colors"
         >
           {securityLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
+          ) : passkeyRegistered ? (
+            <Unlink2 className="w-4 h-4" />
           ) : (
-            <Fingerprint className="w-4 h-4" />
+            <Link2 className="w-4 h-4" />
           )}
-          ลงทะเบียน PassKey
+          {passkeyRegistered ? "ยกเลิก PassKey" : "ลงทะเบียน PassKey"}
         </button>
       </div>
+
+      {googleMessage && <p className="text-xs text-green-600">{googleMessage}</p>}
+      {googleError && <p className="text-xs text-red-600">{googleError}</p>}
+      {securityMessage && <p className="text-xs text-green-600">{securityMessage}</p>}
+      {securityError && <p className="text-xs text-red-600">{securityError}</p>}
     </section>
   );
 
@@ -402,6 +547,7 @@ export default function SettingsPage() {
           items={[
             { id: "profile", label: "โปรไฟล์", icon: User },
             { id: "security", label: "ความปลอดภัย", icon: Shield },
+            { id: "connections", label: "การเชื่อมบัญชี", icon: Link2 },
           ]}
         />
 
@@ -413,9 +559,54 @@ export default function SettingsPage() {
             exit={slideUp.exit}
             transition={slideUp.transition}
           >
-            {tab === "profile" ? profilePanel : securityPanel}
+            {tab === "profile"
+              ? profilePanel
+              : tab === "security"
+                ? securityPanel
+                : connectionsPanel}
           </m.div>
         </AnimatePresence>
+
+        {passwordPromptOpen && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-bg-card border border-border-light p-5 space-y-3">
+              <p className="font-medium text-text-primary">ยืนยันรหัสผ่าน</p>
+              <p className="text-xs text-text-secondary">
+                เพื่อความปลอดภัย กรุณากรอกรหัสผ่านก่อนทำรายการนี้
+              </p>
+              <input
+                type="password"
+                value={passwordForAction}
+                onChange={(e) => setPasswordForAction(e.target.value)}
+                placeholder="รหัสผ่านปัจจุบัน"
+                className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary text-text-primary"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordPromptOpen(false);
+                    setPasswordForAction("");
+                    setPasswordAction(null);
+                  }}
+                  disabled={passwordChecking}
+                  className="flex-1 py-2.5 rounded-xl border border-border-light text-text-secondary disabled:opacity-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmedConnectionAction}
+                  disabled={passwordChecking || !passwordForAction.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-line-green text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {passwordChecking && <Loader2 className="w-4 h-4 animate-spin" />}
+                  ยืนยัน
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isAdmin && (
           <Link
