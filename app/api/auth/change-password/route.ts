@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import {
-  getStudentAccount,
-  hashSecret,
-  isValidNewPassword,
-  STUDENT_ACCOUNTS_COLLECTION,
-  verifySecret,
-} from "@/lib/student-auth-server";
+import { parseJsonBody } from "@/lib/parse-request";
+import { changePasswordSchema } from "@/lib/validations/auth";
+import { getStudentAccount, hashSecret, verifySecret } from "@/lib/student-auth-server";
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -17,52 +12,44 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const currentPassword = body.currentPassword as string;
-    const newPassword = body.newPassword as string;
+    const parsed = await parseJsonBody(request, changePasswordSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { currentPassword, newPassword } = parsed.data;
 
-    if (!isValidNewPassword(newPassword)) {
-      return NextResponse.json(
-        { error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัว และมีทั้งตัวอักษรและตัวเลข" },
-        { status: 400 }
-      );
-    }
-
-    const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-    const studentId = userDoc.data()?.studentId as string | undefined;
-    if (!studentId) {
-      return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
-    }
+    const admin = createAdminClient();
+    const { data: profileData } = await admin
+      .from("profiles")
+      .select("student_id")
+      .eq("id", authUser.uid)
+      .maybeSingle();
+    const profile = profileData as { student_id?: string | null } | null;
+    const studentId = profile?.student_id;
+    if (!studentId) return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
 
     const account = await getStudentAccount(studentId);
-    if (!account) {
-      return NextResponse.json({ error: "ไม่พบบัญชีนักเรียน" }, { status: 404 });
-    }
-
+    if (!account) return NextResponse.json({ error: "ไม่พบบัญชีนักเรียน" }, { status: 404 });
     if (!verifySecret(currentPassword, account.currentPasswordHash)) {
       return NextResponse.json({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง" }, { status: 401 });
     }
 
-    const newHash = hashSecret(newPassword);
-    await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(studentId).set(
-      {
-        currentPasswordHash: newHash,
-        mustChangePassword: false,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const { error: updateAccountError } = await admin
+      .from("student_accounts")
+      .update({
+        current_password_hash: hashSecret(newPassword),
+        must_change_password: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("student_id", studentId);
+    if (updateAccountError) throw updateAccountError;
 
-    await adminAuth.updateUser(authUser.uid, { password: newPassword }).catch(() => {
-      // Google-linked users may not use password provider
-    });
-    await adminDb.collection("users").doc(authUser.uid).set(
-      {
-        mustChangePassword: false,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    await admin.auth.admin.updateUserById(authUser.uid, { password: newPassword });
+    await admin
+      .from("profiles")
+      .update({
+        must_change_password: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", authUser.uid);
 
     return NextResponse.json({ success: true });
   } catch (err) {

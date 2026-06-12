@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { Radio, Search, Loader2, Ban } from "lucide-react";
-import { getAllNfcTags, updateNfcTag } from "@/lib/firestore";
+import { getAllNfcTags, updateNfcTag } from "@/lib/database";
 import { NFC_TAG_STATUS_CONFIG, CATEGORIES, type NfcTag } from "@/lib/types";
 import { cn, formatThaiDate } from "@/lib/utils";
 import { useAppDialog } from "@/hooks/use-app-dialog";

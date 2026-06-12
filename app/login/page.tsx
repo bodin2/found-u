@@ -51,7 +51,6 @@ function LoginPageContent() {
     loading,
     signIn,
     signInWithStudentId,
-    signInWithCustomToken,
     isStudentVerified,
     isAdmin,
     mustChangePassword,
@@ -89,8 +88,7 @@ function LoginPageContent() {
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const { customToken, mustChangePassword: needChange } = await postPinLogin(studentId, pin);
-      await signInWithCustomToken(customToken);
+      const { mustChangePassword: needChange } = await postPinLogin(studentId, pin);
       router.push(needChange ? "/login/change-password" : "/home");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "PIN ไม่ถูกต้อง");
@@ -105,11 +103,10 @@ function LoginPageContent() {
     try {
       const { options, challengeKey } = await postPasskeyLoginOptions();
       const authResponse = await startAuthentication({ optionsJSON: options });
-      const { customToken, mustChangePassword: needChange } = await postPasskeyLoginVerify(
+      const { mustChangePassword: needChange } = await postPasskeyLoginVerify(
         challengeKey,
         authResponse
       );
-      await signInWithCustomToken(customToken);
       router.push(needChange ? "/login/change-password" : "/home");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");

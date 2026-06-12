@@ -24,7 +24,7 @@ import {
   timeoutUser,
   isUserBanned,
   getTimeoutRemaining,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import { logUserBanned, logUserUnbanned, logUserTimeout } from "@/lib/logger";
 import { useAuth } from "@/contexts/auth-context";
 import type { AppUser, BanStatus } from "@/lib/types";

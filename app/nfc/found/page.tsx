@@ -14,7 +14,7 @@ import { CATEGORIES, type ContactInfo, type ContactType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { extractTagIdFromUrl } from "@/lib/nfc";
 import { resolveNfcTagApi, submitNfcFoundReportApi, type NfcResolveResult } from "@/lib/nfc-api";
-import { subscribeToContactTypes, type ContactTypeConfig } from "@/lib/firestore";
+import { subscribeToContactTypes, type ContactTypeConfig } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcFoundReported } from "@/lib/logger";

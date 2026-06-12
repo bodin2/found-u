@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLostItems, getFoundItems, updateLostItem, updateFoundItem, getAppSettings } from '@/lib/firestore';
+import { z } from "zod";
+import { getLostItems, getFoundItems, getAppSettings } from '@/lib/database';
 import { 
   findMatchesForLostItem, 
   findMatchesForFoundItem, 
@@ -7,28 +8,25 @@ import {
   findMatchesForFoundItemAI,
   getMatchConfidence 
 } from '@/lib/matching';
+import { parseJsonBody } from "@/lib/parse-request";
+
+const matchBodySchema = z.object({
+  type: z.enum(["lost", "found"]),
+  itemId: z.string().min(1, "itemId is required"),
+  useAI: z.boolean().optional().default(false),
+});
 
 export async function POST(request: NextRequest) {
   try {
     const { expireOverdueFoundItemsAdmin } = await import("@/lib/found-handover-expiry-server");
     await expireOverdueFoundItemsAdmin();
 
-    const body = await request.json();
-    const { type, itemId, useAI = false } = body;
-
-    if (!type || (type !== 'lost' && type !== 'found')) {
-      return NextResponse.json(
-        { error: 'Type must be "lost" or "found"' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, matchBodySchema);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    if (!itemId || typeof itemId !== 'string') {
-      return NextResponse.json(
-        { error: 'Item ID is required' },
-        { status: 400 }
-      );
-    }
+    const { type, itemId, useAI } = parsed.data;
 
     // Fetch all items
     const [allLostItems, allFoundItems] = await Promise.all([

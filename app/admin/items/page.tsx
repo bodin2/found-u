@@ -26,7 +26,7 @@ import {
   timestampToDate,
   getCategories,
   getLocations,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import {
   STATUS_CONFIG,
   getDropOffLocationLabel,
@@ -39,7 +39,7 @@ import {
   type FoundItem,
   type ItemStatus,
 } from "@/lib/types";
-import type { CategoryConfig, LocationConfig } from "@/lib/firestore";
+import type { CategoryConfig, LocationConfig } from "@/lib/database";
 import { cn, formatThaiDate } from "@/lib/utils";
 import { ResponsiveModal } from "@/components/ui/responsive-modal";
 import { logStatusChanged, logActivity } from "@/lib/logger";

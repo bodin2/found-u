@@ -1,24 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import {
-  loginStudentWithPassword,
-  normalizeStudentId,
-  isValidStudentId,
-} from "@/lib/student-auth-server";
+import { NextResponse } from "next/server";
+import { parseJsonBody } from "@/lib/parse-request";
+import { loginWithPasswordSchema } from "@/lib/validations/auth";
+import { loginStudentWithPassword } from "@/lib/student-auth-server";
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const studentId = normalizeStudentId(body.studentId || "");
-    const password = body.password || "";
+    const parsed = await parseJsonBody(request, loginWithPasswordSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-    if (!isValidStudentId(studentId)) {
-      return NextResponse.json({ error: "เลขประจำตัวต้องเป็นตัวเลข 5 หลัก" }, { status: 400 });
-    }
-    if (!password) {
-      return NextResponse.json({ error: "กรุณากรอกรหัสผ่าน" }, { status: 400 });
-    }
-
-    const result = await loginStudentWithPassword(studentId, password);
+    const result = await loginStudentWithPassword(parsed.data.studentId, parsed.data.password);
     if (!result.ok) {
       return NextResponse.json(
         { error: result.error, retryAfterMs: result.retryAfterMs },
@@ -27,8 +17,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      customToken: result.customToken,
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
       mustChangePassword: result.mustChangePassword,
+      uid: result.uid,
     });
   } catch (err) {
     console.error("Login error:", err);

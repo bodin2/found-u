@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
 import { postResetPassword } from "@/lib/student-auth-api";
-import { useAuth } from "@/contexts/auth-context";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const { signInWithCustomToken } = useAuth();
   const [studentId, setStudentId] = useState("");
   const [schoolPassword, setSchoolPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -27,8 +25,7 @@ export default function ResetPasswordPage() {
     setError(null);
     try {
       const result = await postResetPassword(studentId, schoolPassword, newPassword);
-      if (result.customToken) {
-        await signInWithCustomToken(result.customToken);
+      if (result.access_token && result.refresh_token) {
         router.push("/home");
       } else {
         router.push("/login");

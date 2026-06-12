@@ -1,20 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { loginStudentWithPin, isValidPin, isValidStudentId, normalizeStudentId } from "@/lib/student-auth-server";
+import { NextResponse } from "next/server";
+import { parseJsonBody } from "@/lib/parse-request";
+import { loginWithPinSchema } from "@/lib/validations/auth";
+import { loginStudentWithPin } from "@/lib/student-auth-server";
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const studentId = normalizeStudentId(body.studentId || "");
-    const pin = body.pin || "";
+    const parsed = await parseJsonBody(request, loginWithPinSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-    if (!isValidStudentId(studentId)) {
-      return NextResponse.json({ error: "เลขประจำตัวต้องเป็นตัวเลข 5 หลัก" }, { status: 400 });
-    }
-    if (!isValidPin(pin)) {
-      return NextResponse.json({ error: "PIN ต้องเป็นตัวเลข 6 หลัก" }, { status: 400 });
-    }
-
-    const result = await loginStudentWithPin(studentId, pin);
+    const result = await loginStudentWithPin(parsed.data.studentId, parsed.data.pin);
     if (!result.ok) {
       return NextResponse.json(
         { error: result.error, retryAfterMs: result.retryAfterMs },
@@ -23,8 +17,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      customToken: result.customToken,
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
       mustChangePassword: result.mustChangePassword,
+      uid: result.uid,
     });
   } catch (err) {
     console.error("PIN login error:", err);

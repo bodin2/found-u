@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ChevronLeft, ChevronRight, X, Search, Camera, Clock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { updateUserTutorialSeen } from "@/lib/firestore";
+import { updateUserTutorialSeen } from "@/lib/database";
 
 interface TutorialStep {
   id: number;

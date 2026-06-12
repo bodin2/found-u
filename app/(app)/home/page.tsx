@@ -1,11 +1,9 @@
 "use client";
 
-// Force dynamic rendering for security (ไม่ prerender static)
-export const dynamic = 'force-dynamic';
-
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import Link from "next/link";
-import { Package, ChevronRight, Moon, Sun, LogIn, LogOut, User, Settings, Loader2 } from "lucide-react";
+import { Package, ChevronRight, Moon, Sun, LogIn, LogOut, User, Settings } from "lucide-react";
 import BottomNav from "@/components/layout/bottom-nav";
 import Sidebar from "@/components/layout/sidebar";
 import { useAuth } from "@/contexts/auth-context";
@@ -14,7 +12,37 @@ import { UserAvatar } from "@/components/user/user-avatar";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { menuItems } from "@/lib/menu";
-import { HomeDashboardSection } from "@/components/home/home-dashboard-section";
+import { DashboardListSkeleton } from "@/components/layout/app-shell-skeleton";
+
+const HomeDashboardSection = dynamic(
+  () =>
+    import("@/components/home/home-dashboard-section").then(
+      (mod) => mod.HomeDashboardSection
+    ),
+  {
+    loading: () => (
+      <section className="mt-8 min-h-[16rem]">
+        <DashboardListSkeleton rows={3} />
+      </section>
+    ),
+  }
+);
+
+function UserNameSlot({
+  user,
+  welcomeName,
+}: {
+  user: ReturnType<typeof useAuth>["user"];
+  welcomeName: string;
+}) {
+  if (!user) return null;
+
+  return (
+    <span className="inline-block min-w-[4ch]">
+      {`, ${welcomeName}`}
+    </span>
+  );
+}
 
 export default function Home() {
   const { user, appUser, loading: authLoading, isAdmin, signIn, logout, appSettings } = useAuth();
@@ -23,7 +51,6 @@ export default function Home() {
 
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // ดึงชั่วโมงปัจจุบันสำหรับ greeting
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "สวัสดีตอนเช้า" : hour < 17 ? "สวัสดีตอนบ่าย" : "สวัสดีตอนเย็น";
@@ -51,22 +78,27 @@ export default function Home() {
           MOBILE LAYOUT
           ======================================== */}
       <div className="md:hidden pb-24 min-h-screen bg-bg-primary transition-colors">
-        {/* Header Section - Friendly Greeting */}
         <header className="px-5 pt-6 pb-6 bg-gradient-to-br from-line-green to-line-green">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                 <Package className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-white/80 text-sm">{greeting} 👋</p>
-                <h1 className="text-white text-xl font-semibold">{welcomeName}</h1>
+                <h1 className="text-white text-xl font-semibold min-h-[1.75rem]">
+                  {authLoading ? (
+                    <span className="inline-block h-5 w-28 rounded bg-white/20 animate-pulse align-middle" aria-hidden />
+                  ) : user ? (
+                    welcomeName
+                  ) : (
+                    "Found-U"
+                  )}
+                </h1>
               </div>
             </div>
 
-            {/* Right Actions */}
-            <div className="flex items-center gap-2">
-              {/* Theme Toggle */}
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
                 className="p-2.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
@@ -78,27 +110,24 @@ export default function Home() {
                 )}
               </button>
 
-              {/* User Menu */}
               {authLoading ? (
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 text-white animate-spin" />
-                </div>
+                <div className="w-10 h-10 rounded-full bg-white/20 animate-pulse shrink-0" aria-hidden />
               ) : user ? (
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/30"
+                    className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/30 shrink-0"
                   >
                     <UserAvatar
                       user={user}
                       appUser={appUser}
+                      size={40}
                       className="w-full h-full rounded-full object-cover"
                       iconClassName="w-5 h-5 text-white"
                       fallbackClassName="w-full h-full bg-white/20 text-white"
                     />
                   </button>
 
-                  {/* Dropdown Menu */}
                   {showUserMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
@@ -162,7 +191,6 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Main Menu Cards */}
         <main className="px-5 -mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {menuItems
@@ -203,7 +231,6 @@ export default function Home() {
           />
         </main>
 
-        {/* Bottom Navigation */}
         <BottomNav />
       </div>
 
@@ -211,17 +238,14 @@ export default function Home() {
           DESKTOP LAYOUT - Sidebar + Main Content
           ======================================== */}
       <div className="hidden md:flex min-h-screen bg-bg-primary">
-        {/* Left Sidebar */}
         <Sidebar />
 
-        {/* Main Content */}
         <main className="flex-1 ml-72 bg-bg-secondary px-0 pb-6 pt-0 md:px-8 md:pb-8 xl:px-12 xl:pb-12">
-          {/* Top Header */}
           <header className="bg-bg-card border-b border-border-light sticky top-0 z-10 -mx-6 lg:-mx-8 xl:-mx-12 px-6 lg:px-8 xl:px-12">
             <div className="pt-5 pb-4">
-              <h1 className="text-2xl font-bold text-text-primary">
+              <h1 className="text-2xl font-bold text-text-primary min-h-[2rem]">
                 {greeting}
-                {user ? `, ${welcomeName}` : ""}
+                <UserNameSlot user={user} welcomeName={welcomeName} />
               </h1>
               <p className="text-text-secondary text-sm mt-0.5">
                 ยินดีต้อนรับ!

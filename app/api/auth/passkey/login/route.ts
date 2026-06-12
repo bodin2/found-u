@@ -3,26 +3,27 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
-import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/firebase-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/database.types";
+import { parseJsonBody } from "@/lib/parse-request";
+import { passkeyLoginOptionsSchema, passkeyLoginVerifySchema } from "@/lib/validations/auth";
 import {
   getOrigin,
   getRpId,
   getStudentAccount,
   getStudentIdByPasskeyCredential,
   isValidStudentId,
-  issueStudentCustomToken,
   normalizeStudentId,
   savePasskeyLookup,
   studentIdFromPasskeyUserHandle,
-  STUDENT_ACCOUNTS_COLLECTION,
 } from "@/lib/student-auth-server";
 import { newChallengeKey, storeChallenge, consumeChallenge } from "@/lib/passkey-challenge-store";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const rawStudentId = body.studentId ? normalizeStudentId(body.studentId) : "";
+    const parsed = await parseJsonBody(request, passkeyLoginOptionsSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const rawStudentId = parsed.data.studentId ? normalizeStudentId(parsed.data.studentId) : "";
     const discoverable = !rawStudentId;
 
     if (discoverable) {
@@ -67,20 +68,23 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { challengeKey, response } = body;
+    const admin = createAdminClient();
+    const parsed = await parseJsonBody(request, passkeyLoginVerifySchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { challengeKey, response } = parsed.data;
 
     const stored = consumeChallenge(challengeKey);
     if (!stored?.challenge) {
       return NextResponse.json({ error: "Challenge หมดอายุ" }, { status: 400 });
     }
 
-    let studentId = normalizeStudentId(body.studentId || stored.studentId || "");
-    if (!studentId && response?.userHandle) {
-      studentId = studentIdFromPasskeyUserHandle(response.userHandle) || "";
+    const authResponse = response as Record<string, unknown>;
+    let studentId = normalizeStudentId(parsed.data.studentId || stored.studentId || "");
+    if (!studentId && typeof authResponse.userHandle === "string") {
+      studentId = studentIdFromPasskeyUserHandle(authResponse.userHandle) || "";
     }
-    if (!studentId && response?.id) {
-      studentId = (await getStudentIdByPasskeyCredential(response.id)) || "";
+    if (!studentId && typeof authResponse.id === "string") {
+      studentId = (await getStudentIdByPasskeyCredential(authResponse.id)) || "";
     }
 
     if (!isValidStudentId(studentId)) {
@@ -96,13 +100,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ไม่พบ PassKey" }, { status: 400 });
     }
 
-    const credential = account.passkeyCredentials.find((c) => c.credentialId === response.id);
+    const credential = account.passkeyCredentials.find(
+      (c) => c.credentialId === (typeof authResponse.id === "string" ? authResponse.id : "")
+    );
     if (!credential) {
       return NextResponse.json({ error: "PassKey ไม่ถูกต้อง" }, { status: 401 });
     }
 
     const verification = await verifyAuthenticationResponse({
-      response,
+      response: response as any,
       expectedChallenge: stored.challenge,
       expectedOrigin: getOrigin(request),
       expectedRPID: getRpId(request),
@@ -123,21 +129,19 @@ export async function PUT(request: NextRequest) {
       c.credentialId === credential.credentialId ? { ...c, counter: newCounter } : c
     );
 
-    await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(studentId).set(
-      {
-        passkeyCredentials: updatedCredentials,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    await admin
+      .from("student_accounts")
+      .update({
+        passkey_credentials: updatedCredentials as unknown as Json,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("student_id", studentId);
 
     await savePasskeyLookup(credential.credentialId, studentId);
 
-    const customToken = await issueStudentCustomToken(account.linkedUid);
     return NextResponse.json({
-      customToken,
-      mustChangePassword: account.mustChangePassword,
-    });
+      error: "การเข้าสู่ระบบด้วย Passkey อยู่ระหว่างปรับปรุงสำหรับ Supabase",
+    }, { status: 501 });
   } catch (err) {
     console.error("Passkey login verify error:", err);
     return NextResponse.json({ error: "เข้าสู่ระบบด้วย PassKey ไม่สำเร็จ" }, { status: 500 });

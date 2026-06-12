@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthRequest, updateNfcFoundReportStatusAdmin } from "@/lib/nfc-server";
+import { parseJsonBody } from "@/lib/parse-request";
+import { updateNfcReportStatusSchema } from "@/lib/validations/nfc";
 
 export async function PATCH(
   request: NextRequest,
@@ -12,12 +14,9 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { status } = body as { status?: "viewed" | "resolved" };
-
-    if (status !== "viewed" && status !== "resolved") {
-      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, updateNfcReportStatusSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { status } = parsed.data;
 
     await updateNfcFoundReportStatusAdmin(id, user.uid, status);
     return NextResponse.json({ ok: true });

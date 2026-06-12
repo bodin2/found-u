@@ -16,7 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { getAppSettings, updateAppSettings } from "@/lib/firestore";
+import { getAppSettings, updateAppSettings } from "@/lib/database";
 import { DEFAULT_APP_SETTINGS, type AppSettings } from "@/lib/types";
 
 interface ModelInfo {

@@ -40,6 +40,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { cn } from "@/lib/utils";
 import { slideUp } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { getSessionToken } from "@/lib/auth";
 
 type SettingsTab = "profile" | "security" | "connections";
 type ConnectionAction =
@@ -90,8 +91,7 @@ export default function SettingsPage() {
     const loadPasskeyStatus = async () => {
       if (!user) return;
       try {
-        const token = await user.getIdToken();
-        const status = await getPasskeyStatus(token);
+        const status = await getPasskeyStatus();
         setPasskeyRegistered(status.hasPasskey);
         setPasskeyCount(status.count);
       } catch {
@@ -109,7 +109,8 @@ export default function SettingsPage() {
     setProfileError(null);
     setProfileMessage(null);
     try {
-      const token = await user.getIdToken();
+      const token = await getSessionToken();
+      if (!token) throw new Error("ยังไม่ได้เข้าสู่ระบบ");
       const res = await fetch("/api/user/profile", {
         method: "PATCH",
         headers: {
@@ -140,7 +141,8 @@ export default function SettingsPage() {
     setSecurityError(null);
     setSecurityMessage(null);
     try {
-      const token = await user.getIdToken();
+      const token = await getSessionToken();
+      if (!token) throw new Error("ยังไม่ได้เข้าสู่ระบบ");
       const res = await fetch("/api/auth/pin/setup", {
         method: "POST",
         headers: {
@@ -167,7 +169,8 @@ export default function SettingsPage() {
     setSecurityError(null);
     setSecurityMessage(null);
     try {
-      const token = await user.getIdToken();
+      const token = await getSessionToken();
+      if (!token) throw new Error("ยังไม่ได้เข้าสู่ระบบ");
       const res = await fetch("/api/auth/passkey/register", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -216,16 +219,10 @@ export default function SettingsPage() {
     setGoogleError(null);
     setGoogleMessage(null);
     try {
-      const { user: linkedUser, error: linkError } = await linkGoogleToCurrentUser();
+      const { error: linkError } = await linkGoogleToCurrentUser();
       if (linkError) throw linkError;
-      const linkedGoogle = linkedUser?.providerData?.some(
-        (p) => p.providerId === "google.com"
-      );
-      if (!linkedGoogle) return;
-
-      const token = await (linkedUser ?? user).getIdToken(true);
-      const result = await postConnectGoogle(token);
-      await refreshSession(linkedUser ?? user);
+      const result = await postConnectGoogle();
+      await refreshSession();
       setGoogleMessage(`เชื่อมบัญชี Google สำเร็จ (${result.email})`);
     } catch (err) {
       setGoogleError(err instanceof Error ? err.message : "เชื่อมบัญชี Google ไม่สำเร็จ");
@@ -240,11 +237,10 @@ export default function SettingsPage() {
     setGoogleError(null);
     setGoogleMessage(null);
     try {
-      const { user: unlinkedUser, error } = await unlinkGoogleFromCurrentUser();
+      const { error } = await unlinkGoogleFromCurrentUser();
       if (error) throw error;
-      const token = await (unlinkedUser ?? user).getIdToken(true);
-      await postDisconnectGoogle(token);
-      await refreshSession(unlinkedUser ?? user);
+      await postDisconnectGoogle();
+      await refreshSession();
       setGoogleMessage("ยกเลิกการเชื่อม Google สำเร็จ");
     } catch (err) {
       setGoogleError(err instanceof Error ? err.message : "ยกเลิกการเชื่อม Google ไม่สำเร็จ");
@@ -259,8 +255,7 @@ export default function SettingsPage() {
     setSecurityError(null);
     setSecurityMessage(null);
     try {
-      const token = await user.getIdToken();
-      await deletePasskey(token);
+      await deletePasskey();
       await refreshSession();
       setPasskeyRegistered(false);
       setPasskeyCount(0);
@@ -282,8 +277,7 @@ export default function SettingsPage() {
     if (!user || !passwordAction) return;
     setPasswordChecking(true);
     try {
-      const token = await user.getIdToken();
-      await postVerifyPassword(token, passwordForAction);
+      await postVerifyPassword(passwordForAction);
       setPasswordPromptOpen(false);
       setPasswordForAction("");
 

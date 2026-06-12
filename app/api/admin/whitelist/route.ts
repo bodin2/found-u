@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthRequest, isAdminUser } from "@/lib/nfc-server";
-import { adminDb } from "@/lib/firebase-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ADMIN_WHITELIST_COLLECTION,
   STUDENT_ACCOUNTS_COLLECTION,
   normalizeEmail,
 } from "@/lib/student-auth-server";
-import { FieldValue } from "firebase-admin/firestore";
+import { parseJsonBody } from "@/lib/parse-request";
+import { addAdminWhitelistSchema } from "@/lib/validations/admin";
 
 export async function GET(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -15,23 +16,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [studentsSnap, whitelistSnap, linkedSnap] = await Promise.all([
-    adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).count().get(),
-    adminDb.collection(ADMIN_WHITELIST_COLLECTION).get(),
-    adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).where("hasLoggedInOnce", "==", true).count().get(),
+  const admin = createAdminClient();
+  const [studentsSnap, whitelistSnap, linkedSnap, disabledSnap] = await Promise.all([
+    admin.from(STUDENT_ACCOUNTS_COLLECTION).select("*", { count: "exact", head: true }),
+    admin.from(ADMIN_WHITELIST_COLLECTION).select("*"),
+    admin
+      .from(STUDENT_ACCOUNTS_COLLECTION)
+      .select("*", { count: "exact", head: true })
+      .eq("has_logged_in_once", true),
+    admin
+      .from(STUDENT_ACCOUNTS_COLLECTION)
+      .select("*", { count: "exact", head: true })
+      .eq("status", "disabled"),
   ]);
 
-  const disabledSnap = await adminDb
-    .collection(STUDENT_ACCOUNTS_COLLECTION)
-    .where("status", "==", "disabled")
-    .count()
-    .get();
-
   return NextResponse.json({
-    totalStudents: studentsSnap.data().count,
-    loggedInCount: linkedSnap.data().count,
-    disabledCount: disabledSnap.data().count,
-    whitelist: whitelistSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    totalStudents: studentsSnap.count ?? 0,
+    loggedInCount: linkedSnap.count ?? 0,
+    disabledCount: disabledSnap.count ?? 0,
+    whitelist: whitelistSnap.data ?? [],
   });
 }
 
@@ -42,20 +45,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json();
-  const email = normalizeEmail(body.email || "");
-  const note = body.note as string | undefined;
+  const parsed = await parseJsonBody(request, addAdminWhitelistSchema);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const email = normalizeEmail(parsed.data.email || "");
+  const note = parsed.data.note;
 
   if (!email || !email.includes("@")) {
     return NextResponse.json({ error: "อีเมลไม่ถูกต้อง" }, { status: 400 });
   }
 
-  await adminDb.collection(ADMIN_WHITELIST_COLLECTION).doc(email).set({
-    email,
-    note: note || null,
-    addedBy: authUser.uid,
-    addedAt: FieldValue.serverTimestamp(),
-  });
+  const admin = createAdminClient();
+  await admin.from(ADMIN_WHITELIST_COLLECTION).upsert(
+    {
+      email,
+      note: note || null,
+      added_by: authUser.uid,
+      added_at: new Date().toISOString(),
+    },
+    { onConflict: "email" }
+  );
 
   return NextResponse.json({ success: true, email });
 }
@@ -70,6 +78,7 @@ export async function DELETE(request: NextRequest) {
   const email = normalizeEmail(request.nextUrl.searchParams.get("email") || "");
   if (!email) return NextResponse.json({ error: "ต้องระบุ email" }, { status: 400 });
 
-  await adminDb.collection(ADMIN_WHITELIST_COLLECTION).doc(email).delete();
+  const admin = createAdminClient();
+  await admin.from(ADMIN_WHITELIST_COLLECTION).delete().eq("email", email);
   return NextResponse.json({ success: true });
 }

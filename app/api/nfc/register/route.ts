@@ -4,7 +4,9 @@ import {
   registerNfcTagAdmin,
   type RegisterNfcTagInput,
 } from "@/lib/nfc-server";
-import type { ContactInfo, ItemCategory } from "@/lib/types";
+import { parseJsonBody } from "@/lib/parse-request";
+import { registerNfcTagSchema } from "@/lib/validations/nfc";
+import type { ItemCategory } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,28 +15,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { itemName, category, description, contacts, tagUid, readOnlyLocked } = body as {
-      itemName?: string;
-      category?: ItemCategory;
-      description?: string;
-      contacts?: ContactInfo[];
-      tagUid?: string;
-      readOnlyLocked?: boolean;
-    };
-
-    if (!itemName?.trim() || !category) {
-      return NextResponse.json({ error: "itemName and category required" }, { status: 400 });
+    const parsed = await parseJsonBody(request, registerNfcTagSchema);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { itemName, category, description, contacts, tagUid, readOnlyLocked } = parsed.data;
 
-    const validContacts = (contacts || []).filter((c) => c.value?.trim());
-    if (validContacts.length === 0) {
-      return NextResponse.json({ error: "At least one contact required" }, { status: 400 });
-    }
+    const validContacts = contacts.filter((c) => c.value?.trim());
 
     const input: RegisterNfcTagInput = {
       itemName: itemName.trim(),
-      category,
+      category: category as ItemCategory,
       description: description?.trim(),
       contacts: validContacts,
       tagUid: tagUid?.trim() || undefined,

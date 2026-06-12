@@ -16,19 +16,7 @@ import {
   Phone,
   GripVertical,
 } from "lucide-react";
-import {
-  collection,
-  doc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-  onSnapshot,
-  query,
-  orderBy,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { logConfigChanged } from "@/lib/logger";
 import { useAuth } from "@/contexts/auth-context";
@@ -41,7 +29,7 @@ interface Category {
   label: string;
   icon: string;
   order: number;
-  createdAt?: any;
+  createdAt?: string;
 }
 
 interface Location {
@@ -49,7 +37,7 @@ interface Location {
   value: string;
   label: string;
   order: number;
-  createdAt?: any;
+  createdAt?: string;
 }
 
 interface ContactType {
@@ -59,7 +47,7 @@ interface ContactType {
   icon: string;
   placeholder: string;
   order: number;
-  createdAt?: any;
+  createdAt?: string;
 }
 
 // Default data (fallback)
@@ -100,6 +88,7 @@ const EMOJI_OPTIONS = ["💰", "📱", "🔑", "👜", "💻", "📄", "👕", "
 const CONTACT_EMOJI_OPTIONS = ["📞", "💬", "📷", "📘", "📧", "💌", "📲", "🔔", "✉️", "📨"];
 
 export default function AdminCategoriesPage() {
+  const supabase = createClient();
   const { user } = useAuth();
   const { showAlert, showConfirm, dialog } = useAppDialog();
   const [activeTab, setActiveTab] = useState<"categories" | "locations" | "contacts">("categories");
@@ -121,70 +110,96 @@ export default function AdminCategoriesPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [emojiTarget, setEmojiTarget] = useState<"new" | "edit">("new");
 
+  const loadConfigData = async () => {
+    const [categoriesResult, locationsResult, contactTypesResult] = await Promise.all([
+      supabase.from("categories").select("*").order("sort_order", { ascending: true }),
+      supabase.from("locations").select("*").order("sort_order", { ascending: true }),
+      supabase.from("contact_types").select("*").order("sort_order", { ascending: true }),
+    ]);
+
+    if (!categoriesResult.error) {
+      if (!categoriesResult.data || categoriesResult.data.length === 0) {
+        setCategories(DEFAULT_CATEGORIES.map((c, i) => ({ ...c, id: `default-${i}` })));
+      } else {
+        setCategories(
+          categoriesResult.data.map((row) => ({
+            id: String(row.id),
+            value: String(row.value ?? ""),
+            label: String(row.label ?? ""),
+            icon: String(row.icon ?? "📦"),
+            order: Number(row.sort_order ?? 0),
+            createdAt: typeof row.created_at === "string" ? row.created_at : undefined,
+          }))
+        );
+      }
+    }
+
+    if (!locationsResult.error) {
+      if (!locationsResult.data || locationsResult.data.length === 0) {
+        setLocations(DEFAULT_LOCATIONS.map((l, i) => ({ ...l, id: `default-${i}` })));
+      } else {
+        setLocations(
+          locationsResult.data.map((row) => ({
+            id: String(row.id),
+            value: String(row.value ?? ""),
+            label: String(row.label ?? ""),
+            order: Number(row.sort_order ?? 0),
+            createdAt: typeof row.created_at === "string" ? row.created_at : undefined,
+          }))
+        );
+      }
+    }
+
+    if (!contactTypesResult.error) {
+      if (!contactTypesResult.data || contactTypesResult.data.length === 0) {
+        setContactTypes(DEFAULT_CONTACT_TYPES.map((c, i) => ({ ...c, id: `default-${i}` })));
+      } else {
+        setContactTypes(
+          contactTypesResult.data.map((row) => ({
+            id: String(row.id),
+            value: String(row.value ?? ""),
+            label: String(row.label ?? ""),
+            icon: String(row.icon ?? "📞"),
+            placeholder: String(row.placeholder ?? ""),
+            order: Number(row.sort_order ?? 0),
+            createdAt: typeof row.created_at === "string" ? row.created_at : undefined,
+          }))
+        );
+      }
+    }
+  };
+
   // Load data
   useEffect(() => {
-    let loadedCount = 0;
-    const checkLoaded = () => {
-      loadedCount++;
-      if (loadedCount >= 3) setLoading(false);
-    };
+    let isMounted = true;
+    void loadConfigData()
+      .catch((error) => console.error("Error loading config data:", error))
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
 
-    // Categories
-    const unsubCategories = onSnapshot(
-      query(collection(db, "categories"), orderBy("order", "asc")),
-      (snapshot) => {
-        if (snapshot.empty) {
-          setCategories(DEFAULT_CATEGORIES.map((c, i) => ({ ...c, id: `default-${i}` })));
-        } else {
-          setCategories(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Category)));
-        }
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
-
-    // Global Locations (check both 'locations' and legacy 'dropOffLocations')
-    const unsubLocations = onSnapshot(
-      query(collection(db, "locations"), orderBy("order", "asc")),
-      (snapshot) => {
-        if (snapshot.empty) {
-          // Fallback to legacy
-          onSnapshot(
-            query(collection(db, "dropOffLocations"), orderBy("order", "asc")),
-            (legacySnapshot) => {
-              if (legacySnapshot.empty) {
-                setLocations(DEFAULT_LOCATIONS.map((l, i) => ({ ...l, id: `default-${i}` })));
-              } else {
-                setLocations(legacySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Location)));
-              }
-            }
-          );
-        } else {
-          setLocations(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Location)));
-        }
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
-
-    // Contact Types
-    const unsubContactTypes = onSnapshot(
-      query(collection(db, "contactTypes"), orderBy("order", "asc")),
-      (snapshot) => {
-        if (snapshot.empty) {
-          setContactTypes(DEFAULT_CONTACT_TYPES.map((c, i) => ({ ...c, id: `default-${i}` })));
-        } else {
-          setContactTypes(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ContactType)));
-        }
-        checkLoaded();
-      },
-      () => checkLoaded()
-    );
+    const channel = supabase
+      .channel("admin-config-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "categories" },
+        () => void loadConfigData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "locations" },
+        () => void loadConfigData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "contact_types" },
+        () => void loadConfigData()
+      )
+      .subscribe();
 
     return () => {
-      unsubCategories();
-      unsubLocations();
-      unsubContactTypes();
+      isMounted = false;
+      void supabase.removeChannel(channel);
     };
   }, []);
 
@@ -192,28 +207,46 @@ export default function AdminCategoriesPage() {
   const initializeDefaults = async () => {
     setSaving(true);
     try {
-      // Categories
-      const catSnapshot = await getDocs(collection(db, "categories"));
-      if (catSnapshot.empty) {
-        for (const cat of DEFAULT_CATEGORIES) {
-          await addDoc(collection(db, "categories"), { ...cat, createdAt: serverTimestamp() });
-        }
+      const [catCount, locCount, contactCount] = await Promise.all([
+        supabase.from("categories").select("id", { count: "exact", head: true }),
+        supabase.from("locations").select("id", { count: "exact", head: true }),
+        supabase.from("contact_types").select("id", { count: "exact", head: true }),
+      ]);
+
+      if (!catCount.error && (catCount.count ?? 0) === 0) {
+        await supabase.from("categories").insert(
+          DEFAULT_CATEGORIES.map((cat) => ({
+            value: cat.value,
+            label: cat.label,
+            icon: cat.icon,
+            sort_order: cat.order,
+            created_at: new Date().toISOString(),
+          }))
+        );
       }
 
-      // Locations (use new 'locations' collection)
-      const locSnapshot = await getDocs(collection(db, "locations"));
-      if (locSnapshot.empty) {
-        for (const loc of DEFAULT_LOCATIONS) {
-          await addDoc(collection(db, "locations"), { ...loc, createdAt: serverTimestamp() });
-        }
+      if (!locCount.error && (locCount.count ?? 0) === 0) {
+        await supabase.from("locations").insert(
+          DEFAULT_LOCATIONS.map((loc) => ({
+            value: loc.value,
+            label: loc.label,
+            sort_order: loc.order,
+            created_at: new Date().toISOString(),
+          }))
+        );
       }
 
-      // Contact Types
-      const contactSnapshot = await getDocs(collection(db, "contactTypes"));
-      if (contactSnapshot.empty) {
-        for (const ct of DEFAULT_CONTACT_TYPES) {
-          await addDoc(collection(db, "contactTypes"), { ...ct, createdAt: serverTimestamp() });
-        }
+      if (!contactCount.error && (contactCount.count ?? 0) === 0) {
+        await supabase.from("contact_types").insert(
+          DEFAULT_CONTACT_TYPES.map((ct) => ({
+            value: ct.value,
+            label: ct.label,
+            icon: ct.icon,
+            placeholder: ct.placeholder,
+            sort_order: ct.order,
+            created_at: new Date().toISOString(),
+          }))
+        );
       }
 
       void showAlert({
@@ -245,12 +278,12 @@ export default function AdminCategoriesPage() {
 
     setSaving(true);
     try {
-      const collectionName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contactTypes";
-      const data: any = {
+      const tableName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contact_types";
+      const data: Record<string, unknown> = {
         value: newForm.value.toLowerCase().replace(/\s+/g, "_"),
         label: newForm.label,
-        order: (activeTab === "categories" ? categories : activeTab === "locations" ? locations : contactTypes).length + 1,
-        createdAt: serverTimestamp(),
+        sort_order: (activeTab === "categories" ? categories : activeTab === "locations" ? locations : contactTypes).length + 1,
+        created_at: new Date().toISOString(),
       };
 
       if (activeTab === "categories" || activeTab === "contacts") {
@@ -260,7 +293,8 @@ export default function AdminCategoriesPage() {
         data.placeholder = newForm.placeholder || "";
       }
 
-      await addDoc(collection(db, collectionName), data);
+      const { error } = await supabase.from(tableName).insert(data);
+      if (error) throw error;
       await logConfigChanged("create", activeTab === "categories" ? "category" : activeTab === "locations" ? "location" : "contactType", newForm.label, user?.email || undefined);
 
       setNewForm({ value: "", label: "", icon: "📦", placeholder: "" });
@@ -289,8 +323,8 @@ export default function AdminCategoriesPage() {
 
     setSaving(true);
     try {
-      const collectionName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contactTypes";
-      const data: any = {
+      const tableName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contact_types";
+      const data: Record<string, unknown> = {
         value: editForm.value,
         label: editForm.label,
       };
@@ -302,7 +336,8 @@ export default function AdminCategoriesPage() {
         data.placeholder = editForm.placeholder;
       }
 
-      await updateDoc(doc(db, collectionName, id), data);
+      const { error } = await supabase.from(tableName).update(data).eq("id", id);
+      if (error) throw error;
       await logConfigChanged("update", activeTab === "categories" ? "category" : activeTab === "locations" ? "location" : "contactType", editForm.label, user?.email || undefined);
 
       setEditingId(null);
@@ -337,8 +372,9 @@ export default function AdminCategoriesPage() {
     if (!confirmed) return;
 
     try {
-      const collectionName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contactTypes";
-      await deleteDoc(doc(db, collectionName, id));
+      const tableName = activeTab === "categories" ? "categories" : activeTab === "locations" ? "locations" : "contact_types";
+      const { error } = await supabase.from(tableName).delete().eq("id", id);
+      if (error) throw error;
       await logConfigChanged("delete", activeTab === "categories" ? "category" : activeTab === "locations" ? "location" : "contactType", name, user?.email || undefined);
     } catch (error) {
       console.error("Error deleting:", error);

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { z } from "zod";
+import { parseJsonBody } from "@/lib/parse-request";
 
 export const runtime = "nodejs";
+
+const deleteUploadSchema = z.object({
+  path: z.string().trim().min(1).optional(),
+  url: z.string().trim().url().optional(),
+});
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -44,8 +51,10 @@ function extractPathFromUrl(url: string): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const rawPath = body.path || (body.url ? extractPathFromUrl(body.url) : "");
+    const parsed = await parseJsonBody(request, deleteUploadSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const rawPath =
+      parsed.data.path || (parsed.data.url ? extractPathFromUrl(parsed.data.url) : "");
     const path = normalizePath(rawPath || "");
 
     const bucket = getRequiredEnv("R2_BUCKET_NAME");

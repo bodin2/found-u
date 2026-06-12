@@ -5,7 +5,8 @@ import {
   checkNfcFoundRateLimit,
   getAppSettingsAdmin,
 } from "@/lib/nfc-server";
-import type { ContactInfo } from "@/lib/types";
+import { parseJsonBody } from "@/lib/parse-request";
+import { createNfcFoundReportSchema } from "@/lib/validations/nfc";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,18 +26,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { tagId, finderMessage, locationFound, locationCoords, finderContacts } = body as {
-      tagId?: string;
-      finderMessage?: string;
-      locationFound?: string;
-      locationCoords?: { lat: number; lng: number; accuracy?: number; source?: string };
-      finderContacts?: ContactInfo[];
-    };
-
-    if (!tagId?.trim() || !finderMessage?.trim()) {
-      return NextResponse.json({ error: "tagId and finderMessage required" }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, createNfcFoundReportSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { tagId, finderMessage, locationFound, locationCoords, finderContacts } = parsed.data;
 
     const rateLimit = await checkNfcFoundRateLimit(user.uid);
     if (!rateLimit.allowed) {

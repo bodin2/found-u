@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { verifyAuthRequest, isAdminUser } from "@/lib/nfc-server";
 import { importStudentRows, parseStudentCsvContent } from "@/lib/student-auth-server";
+import { parseJsonBody } from "@/lib/parse-request";
+
+const importStudentsBodySchema = z.object({
+  csvContent: z.string().min(1, "ต้องส่ง csvContent"),
+  dryRun: z.boolean().optional().default(false),
+});
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -12,13 +19,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const csvContent = body.csvContent as string;
-    const dryRun = body.dryRun === true;
-
-    if (!csvContent || typeof csvContent !== "string") {
-      return NextResponse.json({ error: "ต้องส่ง csvContent" }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, importStudentsBodySchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { csvContent, dryRun } = parsed.data;
 
     const { rows, errors: parseErrors } = parseStudentCsvContent(csvContent);
     if (rows.length === 0 && parseErrors.length > 0) {

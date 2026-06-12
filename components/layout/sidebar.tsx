@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Settings, Shield, LogOut, Sun, Moon, Loader2, LogIn } from "lucide-react";
+import { Settings, Shield, LogOut, Sun, Moon, LogIn } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { menuItems } from "@/lib/menu";
 import { getUserPublicEmail, getUserShownName } from "@/lib/user-display";
@@ -53,9 +53,15 @@ export default function Sidebar() {
         </Link>
 
         {/* User Section */}
-        <div className="bg-bg-secondary rounded-xl p-3">
+        <div className="bg-bg-secondary rounded-xl p-3 min-h-[3.75rem]">
           {authLoading ? (
-            <Loader2 className="w-5 h-5 text-line-green animate-spin mx-auto" />
+            <div className="flex items-center gap-3" aria-hidden>
+              <div className="h-10 w-10 rounded-full bg-bg-tertiary animate-pulse shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 w-28 rounded bg-bg-tertiary animate-pulse" />
+                <div className="h-3 w-36 rounded bg-bg-tertiary animate-pulse" />
+              </div>
+            </div>
           ) : user ? (
             <div className="flex items-center gap-3">
               <UserAvatar user={user} appUser={appUser} />

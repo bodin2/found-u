@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminDb } from "@/lib/firebase-admin";
-import {
-  hashSecret,
-  isValidPin,
-  normalizeStudentId,
-  STUDENT_ACCOUNTS_COLLECTION,
-} from "@/lib/student-auth-server";
+import { parseJsonBody } from "@/lib/parse-request";
+import { pinSetupSchema } from "@/lib/validations/auth";
+import { hashSecret } from "@/lib/student-auth-server";
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -16,34 +12,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const pin = body.pin || "";
+    const parsed = await parseJsonBody(request, pinSetupSchema.pick({ pin: true }));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-    if (!isValidPin(pin)) {
-      return NextResponse.json({ error: "PIN ต้องเป็นตัวเลข 6 หลัก" }, { status: 400 });
-    }
-
-    const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-    const studentId = userDoc.data()?.studentId as string | undefined;
+    const admin = createAdminClient();
+    const { data: profileData } = await admin
+      .from("profiles")
+      .select("student_id, auth_methods")
+      .eq("id", authUser.uid)
+      .maybeSingle();
+    const profile = profileData as { student_id?: string | null; auth_methods?: unknown } | null;
+    const studentId = profile?.student_id;
     if (!studentId) {
       return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
     }
 
-    await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(normalizeStudentId(studentId)).set(
-      {
-        pinHash: hashSecret(pin),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    await admin
+      .from("student_accounts")
+      .update({
+        pin_hash: hashSecret(parsed.data.pin),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("student_id", studentId);
 
-    await adminDb.collection("users").doc(authUser.uid).set(
-      {
-        authMethods: FieldValue.arrayUnion("pin"),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const authMethods = Array.isArray(profile?.auth_methods)
+      ? [...new Set([...(profile.auth_methods as string[]), "pin"])]
+      : ["pin"];
+    await admin
+      .from("profiles")
+      .update({
+        auth_methods: authMethods,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", authUser.uid);
 
     return NextResponse.json({ success: true });
   } catch (err) {

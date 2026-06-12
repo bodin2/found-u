@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { extractVisionData, mapVisionToFoundForm } from "@/lib/vision";
 import {
   checkAndRecordRateLimitAtomic,
   getAppSettingsAdmin,
   getRateLimitQuota,
 } from "@/lib/ai-rate-limit";
-import { adminDb } from "@/lib/firebase-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { parseJsonBody } from "@/lib/parse-request";
 
 async function isAdminUser(userId: string): Promise<boolean> {
-  const userDoc = await adminDb.collection("users").doc(userId).get();
-  return userDoc.exists && userDoc.data()?.role === "admin";
+  const admin = createAdminClient();
+  const { data } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+  return data?.role === "admin";
 }
+
+const visionBodySchema = z.object({
+  imageDataUrl: z.string().trim().optional(),
+  imageBase64: z.string().trim().optional(),
+  mimeType: z.string().trim().optional(),
+  userId: z.string().trim().optional(),
+  testMode: z.boolean().optional().default(false),
+});
 
 function parseDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:(.+);base64,(.*)$/);
@@ -38,14 +49,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { imageDataUrl, imageBase64, mimeType, userId, testMode } = body as {
-      imageDataUrl?: string;
-      imageBase64?: string;
-      mimeType?: string;
-      userId?: string;
-      testMode?: boolean;
-    };
+    const parsed = await parseJsonBody(request, visionBodySchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { imageDataUrl, imageBase64, mimeType, userId, testMode } = parsed.data;
 
     let parsedMime = mimeType;
     let parsedBase64 = imageBase64;

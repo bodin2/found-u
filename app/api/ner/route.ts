@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { extractNERData } from "@/lib/ner";
 import {
   checkAndRecordRateLimitAtomic,
   getAppSettingsAdmin,
   getRateLimitQuota,
 } from "@/lib/ai-rate-limit";
+import { parseJsonBody } from "@/lib/parse-request";
+
+const nerBodySchema = z.object({
+  text: z.string().trim().min(1, "Text is required"),
+  type: z.enum(["lost", "found"]),
+  userId: z.string().trim().optional(),
+});
 
 // Get current quota without recording (for UI display)
 export async function GET(request: NextRequest) {
@@ -27,22 +35,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { text, type, userId } = body;
-
-    if (!text || typeof text !== 'string') {
-      return NextResponse.json(
-        { error: 'Text is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!type || (type !== 'lost' && type !== 'found')) {
-      return NextResponse.json(
-        { error: 'Type must be "lost" or "found"' },
-        { status: 400 }
-      );
-    }
+    const parsed = await parseJsonBody(request, nerBodySchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { text, type, userId } = parsed.data;
 
     const settings = await getAppSettingsAdmin();
 

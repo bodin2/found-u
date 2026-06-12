@@ -7,31 +7,15 @@ import { useState, useEffect } from "react";
 import {
   FileText,
   Search,
-  Filter,
   Calendar,
   User,
   Package,
   Loader2,
-  ChevronDown,
-  AlertCircle,
-  CheckCircle,
-  Clock,
   Trash2,
   Edit,
   Eye,
 } from "lucide-react";
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  where,
-  Timestamp,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { createClient } from "@/lib/supabase/client";
 import { cn, formatThaiDate } from "@/lib/utils";
 
 // Types
@@ -46,9 +30,7 @@ interface ActivityLog {
   userEmail?: string;
   userName?: string;
   details?: string;
-  ipAddress?: string;
-  userAgent?: string;
-  createdAt: any;
+  createdAt: Date;
 }
 
 // Action icons
@@ -82,6 +64,7 @@ const TARGET_LABELS: Record<string, string> = {
 };
 
 export default function AdminLogsPage() {
+  const supabase = createClient();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -91,54 +74,75 @@ export default function AdminLogsPage() {
 
   // Load logs
   useEffect(() => {
-    let q = query(
-      collection(db, "activityLogs"),
-      orderBy("createdAt", "desc"),
-      limit(200)
-    );
+    const loadLogs = async () => {
+      let startDate: Date | null = null;
 
-    // Apply date filter
-    if (dateRange !== "all") {
-      const now = new Date();
-      let startDate: Date;
-
-      switch (dateRange) {
-        case "today":
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          break;
-        case "week":
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case "month":
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
-        default:
-          startDate = new Date(0);
+      if (dateRange !== "all") {
+        const now = new Date();
+        switch (dateRange) {
+          case "today":
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case "week":
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case "month":
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            startDate = null;
+        }
       }
 
-      q = query(
-        collection(db, "activityLogs"),
-        where("createdAt", ">=", Timestamp.fromDate(startDate)),
-        orderBy("createdAt", "desc"),
-        limit(200)
-      );
-    }
+      let queryBuilder = supabase
+        .from("activity_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      const logsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as ActivityLog[];
-      setLogs(logsData);
+      if (startDate) {
+        queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
+      }
+
+      const { data, error } = await queryBuilder;
+      if (error) throw error;
+
+      const mappedLogs: ActivityLog[] = (data ?? []).map((row) => ({
+        id: String(row.id),
+        action: String(row.action ?? ""),
+        actionType: (String(row.action_type ?? "view") as ActivityLog["actionType"]),
+        targetType: (String(row.target_type ?? "system") as ActivityLog["targetType"]),
+        targetId: typeof row.target_id === "string" ? row.target_id : undefined,
+        targetName: typeof row.target_name === "string" ? row.target_name : undefined,
+        userId: typeof row.user_id === "string" ? row.user_id : undefined,
+        userEmail: typeof row.user_email === "string" ? row.user_email : undefined,
+        userName: typeof row.user_name === "string" ? row.user_name : undefined,
+        details: typeof row.details === "string" ? row.details : undefined,
+        createdAt: row.created_at ? new Date(String(row.created_at)) : new Date(),
+      }));
+
+      setLogs(mappedLogs);
       setLoading(false);
-    }, (error) => {
+    };
+
+    void loadLogs().catch((error) => {
       console.error("Error fetching logs:", error);
-      // If collection doesn't exist, just show empty
       setLogs([]);
       setLoading(false);
     });
 
-    return () => unsub();
+    const channel = supabase
+      .channel("admin-activity-logs")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "activity_logs" },
+        () => void loadLogs()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [dateRange]);
 
   // Filter logs
@@ -157,38 +161,42 @@ export default function AdminLogsPage() {
     const sampleLogs = [
       {
         action: "แจ้งของหาย: กระเป๋าสตางค์",
-        actionType: "create",
-        targetType: "lostItem",
-        targetId: "sample-1",
-        targetName: "กระเป๋าสตางค์",
-        userEmail: "student@school.ac.th",
-        userName: "นักเรียนตัวอย่าง",
+        action_type: "create",
+        target_type: "lostItem",
+        target_id: "sample-1",
+        target_name: "กระเป๋าสตางค์",
+        user_email: "student@school.ac.th",
+        user_name: "นักเรียนตัวอย่าง",
       },
       {
         action: "แจ้งเจอของ: โทรศัพท์ iPhone",
-        actionType: "create",
-        targetType: "foundItem",
-        targetId: "sample-2",
-        targetName: "โทรศัพท์ iPhone",
-        userEmail: "finder@school.ac.th",
-        userName: "ผู้พบของ",
+        action_type: "create",
+        target_type: "foundItem",
+        target_id: "sample-2",
+        target_name: "โทรศัพท์ iPhone",
+        user_email: "finder@school.ac.th",
+        user_name: "ผู้พบของ",
       },
       {
         action: "อัปเดตสถานะเป็น 'รับคืนแล้ว'",
-        actionType: "update",
-        targetType: "lostItem",
-        targetId: "sample-1",
-        targetName: "กระเป๋าสตางค์",
-        userEmail: "admin@school.ac.th",
-        userName: "แอดมิน",
+        action_type: "update",
+        target_type: "lostItem",
+        target_id: "sample-1",
+        target_name: "กระเป๋าสตางค์",
+        user_email: "admin@school.ac.th",
+        user_name: "แอดมิน",
       },
     ];
 
-    for (const log of sampleLogs) {
-      await addDoc(collection(db, "activityLogs"), {
+    const { error } = await supabase.from("activity_logs").insert(
+      sampleLogs.map((log) => ({
         ...log,
-        createdAt: serverTimestamp(),
-      });
+        created_at: new Date().toISOString(),
+      }))
+    );
+
+    if (error) {
+      console.error("Error adding sample logs:", error);
     }
   };
 
@@ -342,9 +350,7 @@ export default function AdminLogsPage() {
                         {ACTION_LABELS[log.actionType] || log.actionType}
                       </span>
                       <p className="text-xs text-gray-400 mt-1">
-                        {log.createdAt
-                          ? formatThaiDate(log.createdAt.toDate())
-                          : "-"}
+                        {log.createdAt ? formatThaiDate(log.createdAt) : "-"}
                       </p>
                     </div>
                   </div>

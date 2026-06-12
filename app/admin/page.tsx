@@ -23,7 +23,7 @@ import {
   getAIUsageStats,
   subscribeToAIUsage,
   getAllUsers,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import {
   CATEGORIES,
   STATUS_CONFIG,

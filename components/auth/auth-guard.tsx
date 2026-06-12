@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { Loader2 } from "lucide-react";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { TutorialSystem } from "@/components/ui/tutorial-system";
 import { StudentRegistrationModal } from "@/components/auth/student-registration-modal";
@@ -97,30 +96,24 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, isStudentVerified, hasSeenTutorial, pathname]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
-        <div className="flex flex-col items-center">
-          <Loader2 className="w-10 h-10 text-line-green animate-spin mb-4" />
-          <p className="text-text-secondary">กำลังตรวจสอบสิทธิ์...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user && !isPublicPath(pathname)) {
+  if (!loading && !user && !isPublicPath(pathname)) {
     return null;
   }
 
-  if (user && pathname === "/") {
+  if (!loading && user && pathname === "/") {
     return null;
   }
 
-  if (user && isBanned && pathname !== "/banned") {
+  if (!loading && user && isBanned && pathname !== "/banned") {
     return null;
   }
 
-  if (user && mustChangePassword && pathname !== "/login/change-password") {
+  if (
+    !loading &&
+    user &&
+    mustChangePassword &&
+    pathname !== "/login/change-password"
+  ) {
     return null;
   }
 

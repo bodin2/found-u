@@ -1,13 +1,16 @@
-import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/firebase-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";
 
 /**
  * เปลี่ยนสถานะรายการของเจอที่เลยกำหนดส่งห้องบุคคลเป็น expired (ใช้ Admin SDK)
  */
 export async function expireOverdueFoundItemsAdmin(): Promise<number> {
-  const settingsSnap = await adminDb.collection("settings").doc("appSettings").get();
-  const settingsData = settingsSnap.data();
+  const admin = createAdminClient();
+  const { data: settingsRow } = await admin.from("app_settings").select("settings").eq("id", "default").maybeSingle();
+  const settingsData = (settingsRow?.settings || {}) as {
+    foundHandoverDeadlineEnabled?: boolean;
+    foundHandoverDeadlineMinutes?: number;
+  };
   const enabled =
     settingsData?.foundHandoverDeadlineEnabled ??
     DEFAULT_APP_SETTINGS.foundHandoverDeadlineEnabled ??
@@ -23,45 +26,36 @@ export async function expireOverdueFoundItemsAdmin(): Promise<number> {
   );
 
   const nowMs = Date.now();
-  const snap = await adminDb
-    .collection("foundItems")
-    .where("status", "==", "pending_room_confirm")
-    .get();
+  const { data: rows } = await admin
+    .from("found_items")
+    .select("id, handover_deadline_at, created_at")
+    .eq("status", "pending_room_confirm");
+  if (!rows || rows.length === 0) return 0;
 
-  if (snap.empty) return 0;
-
-  const batch = adminDb.batch();
   let count = 0;
 
-  for (const docSnap of snap.docs) {
-    const data = docSnap.data();
+  for (const data of rows) {
+    const row = data as { id: string; handover_deadline_at?: string | null; created_at?: string | null };
     let deadlineMs: number | null = null;
 
-    if (data.handoverDeadlineAt) {
-      deadlineMs =
-        typeof data.handoverDeadlineAt.toMillis === "function"
-          ? data.handoverDeadlineAt.toMillis()
-          : data.handoverDeadlineAt.toDate().getTime();
-    } else if (data.createdAt) {
-      const createdMs =
-        typeof data.createdAt.toMillis === "function"
-          ? data.createdAt.toMillis()
-          : data.createdAt.toDate().getTime();
+    if (row.handover_deadline_at) {
+      deadlineMs = new Date(row.handover_deadline_at).getTime();
+    } else if (row.created_at) {
+      const createdMs = new Date(row.created_at).getTime();
       deadlineMs = createdMs + minutes * 60 * 1000;
     }
 
     if (deadlineMs !== null && deadlineMs < nowMs) {
-      batch.update(docSnap.ref, {
-        status: "expired",
-        expiredAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      await admin
+        .from("found_items")
+        .update({
+          status: "expired",
+          expired_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
       count++;
     }
-  }
-
-  if (count > 0) {
-    await batch.commit();
   }
 
   return count;

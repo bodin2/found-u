@@ -32,6 +32,8 @@ console.log(JSON.stringify(data, null, 2));
 
 if (res.ok) {
   console.log("\nLogin OK — mustChangePassword:", data.mustChangePassword);
+  console.log("Has access token:", Boolean(data.access_token));
+  console.log("Has refresh token:", Boolean(data.refresh_token));
 } else {
   process.exit(1);
 }

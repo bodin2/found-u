@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { z } from "zod";
+import { parseJsonBody } from "@/lib/parse-request";
 
 export const runtime = "nodejs";
+
+const presignUploadSchema = z.object({
+  path: z.string().trim().min(1, "กรุณาระบุ path"),
+  contentType: z.string().trim().min(1, "กรุณาระบุ contentType").optional(),
+});
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -70,9 +77,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ publicUrl, path });
     }
 
-    const body = await request.json();
-    const path = normalizePath(body.path || "");
-    const contentType = body.contentType || "application/octet-stream";
+    const parsed = await parseJsonBody(request, presignUploadSchema);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const path = normalizePath(parsed.data.path);
+    const contentType = parsed.data.contentType || "application/octet-stream";
 
     const bucket = getRequiredEnv("R2_BUCKET_NAME");
     const client = getR2Client();

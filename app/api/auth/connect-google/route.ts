@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import {
-  getStudentAccount,
-  normalizeEmail,
-  STUDENT_ACCOUNTS_COLLECTION,
-  syncAppUserFromStudent,
-} from "@/lib/student-auth-server";
+import { getStudentAccount, normalizeEmail, syncAppUserFromStudent } from "@/lib/student-auth-server";
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -16,33 +10,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const firebaseUser = await adminAuth.getUser(authUser.uid);
-    const googleProvider = firebaseUser.providerData.find(
-      (p) => p.providerId === "google.com"
-    );
-
-    if (!googleProvider?.email) {
+    const admin = createAdminClient();
+    const { data: authData } = await admin.auth.admin.getUserById(authUser.uid);
+    const user = authData.user;
+    const googleIdentity = user?.identities?.find((identity) => identity.provider === "google");
+    const googleEmail = normalizeEmail((googleIdentity?.identity_data?.email as string) || authUser.email || "");
+    if (!googleEmail) {
       return NextResponse.json(
         { error: "กรุณาเชื่อมบัญชี Google จากปุ่มด้านล่างก่อน" },
         { status: 400 }
       );
     }
 
-    const googleEmail = normalizeEmail(googleProvider.email);
-    const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-    const userData = userDoc.data();
-    const studentId = userData?.studentId as string | undefined;
+    const { data: profileData } = await admin
+      .from("profiles")
+      .select("student_id, auth_methods")
+      .eq("id", authUser.uid)
+      .maybeSingle();
+    const profile = profileData as { student_id?: string | null; auth_methods?: unknown } | null;
+    const studentId = profile?.student_id as string | undefined;
 
     if (!studentId) {
-      await adminDb.collection("users").doc(authUser.uid).set(
-        {
+      const authMethods = Array.isArray(profile?.auth_methods)
+        ? [...new Set([...(profile.auth_methods as string[]), "google"])]
+        : ["google"];
+      await admin
+        .from("profiles")
+        .update({
           email: googleEmail,
-          photoURL: googleProvider.photoURL || userData?.photoURL || null,
-          authMethods: FieldValue.arrayUnion("google"),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+          photo_url: (googleIdentity?.identity_data?.avatar_url as string | undefined) || null,
+          auth_methods: authMethods,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", authUser.uid);
       return NextResponse.json({ success: true, email: googleEmail });
     }
 
@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
     if (!account) {
       return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 404 });
     }
-
     if (
       account.linkedGoogleEmail &&
       account.linkedGoogleEmail !== googleEmail &&
@@ -63,23 +62,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(studentId).set(
-      {
-        linkedUid: authUser.uid,
-        linkedGoogleEmail: googleEmail,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    await admin
+      .from("student_accounts")
+      .update({
+        linked_uid: authUser.uid,
+        linked_google_email: googleEmail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("student_id", studentId);
 
-    const existingMethods = (userData?.authMethods as string[] | undefined) || [];
+    const existingMethods = (profile?.auth_methods as string[] | undefined) || [];
     const authMethods = Array.from(new Set([...existingMethods, "google"]));
-
     await syncAppUserFromStudent(authUser.uid, account, {
       email: googleEmail,
       displayName:
-        firebaseUser.displayName || `${account.firstName} ${account.lastName}`,
-      photoURL: googleProvider.photoURL || firebaseUser.photoURL,
+        (user?.user_metadata?.display_name as string | undefined) ||
+        `${account.firstName} ${account.lastName}`,
+      photoURL: (googleIdentity?.identity_data?.avatar_url as string | undefined) || undefined,
       authMethods: authMethods as ("google" | "password" | "pin" | "passkey")[],
     });
 

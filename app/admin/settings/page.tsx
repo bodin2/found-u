@@ -26,17 +26,8 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
-import { getAllUsers, getAppSettings, updateAppSettings, timestampToDate } from "@/lib/firestore";
-import { db } from "@/lib/firebase";
-import {
-  collection,
-  getDocs,
-  writeBatch,
-  doc,
-  serverTimestamp,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-} from "firebase/firestore";
+import { getAllUsers, getAppSettings, updateAppSettings, timestampToDate } from "@/lib/database";
+import { createClient } from "@/lib/supabase/client";
 import { uploadImage, compressImage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { AppUser, AppSettings } from "@/lib/types";
@@ -55,6 +46,7 @@ const SETTINGS_TABS = [
 type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];
 
 export default function AdminSettingsPage() {
+  const supabase = createClient();
   const { user, appSettings: contextAppSettings } = useAuth();
   const { showAlert, showConfirm, dialog } = useAppDialog();
   const [saving, setSaving] = useState(false);
@@ -153,13 +145,24 @@ export default function AdminSettingsPage() {
     setProcessingData(true);
     try {
       // 1. Fetch all data
-      const [lostSnapshot, foundSnapshot] = await Promise.all([
-        getDocs(collection(db, "lostItems")),
-        getDocs(collection(db, "foundItems"))
+      const [{ data: lostRows, error: lostError }, { data: foundRows, error: foundError }] = await Promise.all([
+        supabase.from("lost_items").select("*"),
+        supabase.from("found_items").select("*"),
       ]);
 
-      const lostItems = lostSnapshot.docs.map(doc => ({ id: doc.id, type: "lost" as const, ...doc.data() as Record<string, unknown> }));
-      const foundItems = foundSnapshot.docs.map(doc => ({ id: doc.id, type: "found" as const, ...doc.data() as Record<string, unknown> }));
+      if (lostError) throw lostError;
+      if (foundError) throw foundError;
+
+      const lostItems = (lostRows ?? []).map((row) => ({
+        id: String(row.id),
+        type: "lost" as const,
+        ...row as Record<string, unknown>,
+      }));
+      const foundItems = (foundRows ?? []).map((row) => ({
+        id: String(row.id),
+        type: "found" as const,
+        ...row as Record<string, unknown>,
+      }));
 
       const allItems = [...lostItems, ...foundItems];
 
@@ -178,19 +181,17 @@ export default function AdminSettingsPage() {
         ...allItems.map(item => {
           // Normalize fields - use type assertion for accessing properties
           const itemData = item as Record<string, unknown>;
-          const name = item.type === "lost" ? (itemData.itemName as string) : (itemData.description as string);
-          const location = item.type === "lost" ? (itemData.locationLost as string) : (itemData.locationFound as string);
-          const date = item.type === "lost" ? itemData.dateLost : itemData.dateFound;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const dateStr = date ? timestampToDate(date as any).toISOString() : "";
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const createdStr = itemData.createdAt ? timestampToDate(itemData.createdAt as any).toISOString() : "";
+          const name = item.type === "lost" ? (itemData.item_name as string) : (itemData.description as string);
+          const location = item.type === "lost" ? (itemData.location_lost as string) : (itemData.location_found as string);
+          const date = item.type === "lost" ? itemData.date_lost : itemData.date_found;
+          const dateStr = date ? timestampToDate(date).toISOString() : "";
+          const createdStr = itemData.created_at ? timestampToDate(itemData.created_at).toISOString() : "";
 
           // Flatten first contact if exists
           let contactName = "";
           let contactDetail = "";
           const contacts = itemData.contacts as Array<{ type: string; value: string }> | undefined;
-          const finderContacts = itemData.finderContacts as Array<{ type: string; value: string }> | undefined;
+          const finderContacts = itemData.finder_contacts as Array<{ type: string; value: string }> | undefined;
           if (item.type === "lost" && contacts?.[0]) {
             contactName = contacts[0].type;
             contactDetail = contacts[0].value;
@@ -202,7 +203,7 @@ export default function AdminSettingsPage() {
           return [
             item.type,
             item.id,
-            (itemData.trackingCode as string) || "",
+            (itemData.tracking_code as string) || "",
             (itemData.status as string),
             (itemData.category as string) || "",
             `"${(name || "").replace(/"/g, '""')}"`, // Escape quotes
@@ -261,9 +262,10 @@ export default function AdminSettingsPage() {
         const text = e.target?.result as string;
         const rows = text.split("\n").slice(1); // Skip header
 
-        let batch = writeBatch(db);
-        let batchCount = 0;
-        const BATCH_LIMIT = 400; // Commit every 400 ops (limit is 500)
+        const lostInserts: Record<string, unknown>[] = [];
+        const foundInserts: Record<string, unknown>[] = [];
+        const BATCH_LIMIT = 500;
+        const nowIso = new Date().toISOString();
 
         for (const row of rows) {
           if (!row.trim()) continue;
@@ -274,8 +276,6 @@ export default function AdminSettingsPage() {
           // Here we assume standard format or basic split if simple.
           // BUT, our export logic added quotes. So basic split starts efficiently:
           // Let's us a smarter regex split for quotes
-          const cols = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-          // Fallback to simple split if regex fails or complicates
           const simpleCols = row.split(",");
 
           if (simpleCols.length < 4) continue; // Invalid row
@@ -285,45 +285,45 @@ export default function AdminSettingsPage() {
           // Map index based on header: 
           // 0:type, 1:id, 2:trackingCode, 3:status, 4:category, 5:itemName, 6:desc...
 
-          const newItemRef = doc(collection(db, type === "lost" ? "lostItems" : "foundItems"));
-
-          // Basic fields
           const baseData = {
             status: simpleCols[3] || "searching",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            trackingCode: simpleCols[2] || `IMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            itemName: (simpleCols[5] || "").replace(/^"|"$/g, '').replace(/""/g, '"'),
+            created_at: nowIso,
+            updated_at: nowIso,
+            tracking_code: simpleCols[2] || `IMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            item_name: (simpleCols[5] || "").replace(/^"|"$/g, '').replace(/""/g, '"'),
             description: (simpleCols[6] || "").replace(/^"|"$/g, '').replace(/""/g, '"'),
             category: simpleCols[4] || "other",
           };
 
           if (type === "lost") {
-            batch.set(newItemRef, {
+            lostInserts.push({
               ...baseData,
-              locationLost: (simpleCols[7] || "").replace(/^"|"$/g, ''),
-              dateLost: serverTimestamp(), // Default to now if parsing failed
-              // contacts: ... (Simplified import)
+              location_lost: (simpleCols[7] || "").replace(/^"|"$/g, ''),
+              date_lost: nowIso,
             });
           } else if (type === "found") {
-            batch.set(newItemRef, {
+            foundInserts.push({
               ...baseData,
-              locationFound: (simpleCols[7] || "").replace(/^"|"$/g, ''),
-              dateFound: serverTimestamp(),
-              // finderContacts: ...
+              location_found: (simpleCols[7] || "").replace(/^"|"$/g, ''),
+              date_found: nowIso,
             });
-          }
-
-          batchCount++;
-          if (batchCount >= BATCH_LIMIT) {
-            await batch.commit();
-            batch = writeBatch(db);
-            batchCount = 0;
           }
         }
 
-        if (batchCount > 0) {
-          await batch.commit();
+        for (let i = 0; i < lostInserts.length; i += BATCH_LIMIT) {
+          const chunk = lostInserts.slice(i, i + BATCH_LIMIT);
+          if (chunk.length > 0) {
+            const { error } = await supabase.from("lost_items").insert(chunk);
+            if (error) throw error;
+          }
+        }
+
+        for (let i = 0; i < foundInserts.length; i += BATCH_LIMIT) {
+          const chunk = foundInserts.slice(i, i + BATCH_LIMIT);
+          if (chunk.length > 0) {
+            const { error } = await supabase.from("found_items").insert(chunk);
+            if (error) throw error;
+          }
         }
 
         await showAlert({
@@ -371,31 +371,32 @@ export default function AdminSettingsPage() {
     setProcessingData(true);
 
     try {
-      let batch = writeBatch(db);
-      const lostSnapshot = await getDocs(collection(db, "lostItems"));
-      const foundSnapshot = await getDocs(collection(db, "foundItems"));
+      const [{ data: lostRows, error: lostFetchError }, { data: foundRows, error: foundFetchError }] = await Promise.all([
+        supabase.from("lost_items").select("id"),
+        supabase.from("found_items").select("id"),
+      ]);
 
-      let count = 0;
-      const BATCH_LIMIT = 400;
+      if (lostFetchError) throw lostFetchError;
+      if (foundFetchError) throw foundFetchError;
 
-      // Function to process deletions in chunks
-      const deleteChunks = async (docs: QueryDocumentSnapshot<DocumentData>[]) => {
-        for (const doc of docs) {
-          batch.delete(doc.ref);
-          count++;
-          if (count >= BATCH_LIMIT) {
-            await batch.commit();
-            batch = writeBatch(db);
-            count = 0;
-          }
+      const BATCH_LIMIT = 500;
+      const lostIds = (lostRows ?? []).map((row) => String(row.id));
+      const foundIds = (foundRows ?? []).map((row) => String(row.id));
+
+      for (let i = 0; i < lostIds.length; i += BATCH_LIMIT) {
+        const chunk = lostIds.slice(i, i + BATCH_LIMIT);
+        if (chunk.length > 0) {
+          const { error } = await supabase.from("lost_items").delete().in("id", chunk);
+          if (error) throw error;
         }
-      };
+      }
 
-      await deleteChunks(lostSnapshot.docs);
-      await deleteChunks(foundSnapshot.docs);
-
-      if (count > 0) {
-        await batch.commit();
+      for (let i = 0; i < foundIds.length; i += BATCH_LIMIT) {
+        const chunk = foundIds.slice(i, i + BATCH_LIMIT);
+        if (chunk.length > 0) {
+          const { error } = await supabase.from("found_items").delete().in("id", chunk);
+          if (error) throw error;
+        }
       }
 
       await showAlert({
@@ -1157,22 +1158,21 @@ export default function AdminSettingsPage() {
       </div>
 
       <div className="rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20 p-4 text-sm text-blue-800 dark:text-blue-300">
-        การตั้งค่าทั้งหมดบันทึกลง Firestore ที่{" "}
+        การตั้งค่าทั้งหมดบันทึกลง Supabase ที่{" "}
         <code className="bg-blue-100 dark:bg-blue-900/50 px-1 rounded">settings/appSettings</code>
         — กดปุ่ม <strong>บันทึกการตั้งค่า</strong> ด้านบน
       </div>
 
-      {/* Firebase Rules Info */}
+      {/* Supabase Policy Info */}
       <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4">
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-medium text-yellow-700 dark:text-yellow-400">
-              อย่าลืมตั้งค่า Firebase Rules!
+              อย่าลืมตรวจสอบ Supabase RLS Policies!
             </p>
             <p className="text-sm text-yellow-600 dark:text-yellow-500 mt-1">
-              ดูไฟล์ <code className="bg-yellow-100 dark:bg-yellow-900/50 px-1 rounded">docs/firestore-rules.txt</code> และ{" "}
-              <code className="bg-yellow-100 dark:bg-yellow-900/50 px-1 rounded">docs/storage-rules.txt</code> แล้วก็อปไปวางใน Firebase Console
+              ยืนยันว่า role ที่เป็น admin มีสิทธิ์อ่าน/เขียนตารางที่เกี่ยวข้องใน Supabase
             </p>
           </div>
         </div>

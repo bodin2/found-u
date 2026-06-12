@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bot, Sliders, Activity, ArrowRight, Loader2 } from "lucide-react";
-import { getAppSettings } from "@/lib/firestore";
+import { getAppSettings } from "@/lib/database";
 import { DEFAULT_APP_SETTINGS, type AppSettings } from "@/lib/types";
 
 export default function AdminAIPage() {

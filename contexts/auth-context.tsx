@@ -1,24 +1,19 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { type User } from "firebase/auth";
 import {
   auth,
+  type User,
+  getSessionToken,
   onAuthChange,
   reloadCurrentUser,
   signInWithGoogle,
-  signInWithStudentCustomToken,
+  signInWithStudentSession,
   signOut,
 } from "@/lib/auth";
-import {
-  getUser,
-  subscribeToUser,
-  subscribeToAppSettings,
-  isUserBanned,
-  getTimeoutRemaining,
-} from "@/lib/firestore";
+import { getTimeoutRemaining, isUserBanned } from "@/lib/database";
 import { getAuthSessionStatus, postStudentLogin } from "@/lib/student-auth-api";
-import type { AppUser, BanStatus, AppSettings } from "@/lib/types";
+import type { AppSettings, AppUser, BanStatus } from "@/lib/types";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";
 
 interface AuthContextType {
@@ -38,9 +33,9 @@ interface AuthContextType {
   timeoutRemaining: number;
   signIn: () => Promise<void>;
   signInWithStudentId: (studentId: string, password: string) => Promise<{ mustChangePassword: boolean }>;
-  signInWithCustomToken: (customToken: string) => Promise<void>;
+  signInWithCustomToken: (_customToken: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshSession: (firebaseUser?: User | null) => Promise<void>;
+  refreshSession: () => Promise<void>;
   refreshUserProfile: () => Promise<void>;
 }
 
@@ -53,53 +48,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appSettingsReady, setAppSettingsReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAuthActionLoading, setIsAuthActionLoading] = useState(false);
-  const [sessionVerified, setSessionVerified] = useState(false);
 
   const refreshUserProfile = async () => {
-    const uid = auth.currentUser?.uid ?? user?.uid;
+    const uid = auth.currentUser?.id ?? user?.id;
     if (!uid) return;
+    const { getUser } = await import("@/lib/database");
     const latest = await getUser(uid);
     if (latest) setAppUser(latest);
   };
 
-  const refreshSession = async (firebaseUser?: User | null) => {
-    const u = firebaseUser ?? auth.currentUser ?? user;
-    if (!u) {
-      setSessionVerified(false);
-      return;
-    }
-    try {
-      await reloadCurrentUser();
-      const fresh = auth.currentUser;
-      if (fresh) setUser(fresh);
-
-      const token = await (fresh ?? u).getIdToken(true);
-      await getAuthSessionStatus(token);
-      await refreshUserProfile();
-      setSessionVerified(true);
-    } catch {
-      setSessionVerified(true);
-    }
+  const refreshSession = async () => {
+    const current = auth.currentUser ?? user;
+    if (!current) return;
+    await reloadCurrentUser();
+    await refreshUserProfile();
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthChange(async (firebaseUser) => {
-      setUser(firebaseUser);
-
-      if (firebaseUser) {
-        try {
-          const token = await firebaseUser.getIdToken();
-          await getAuthSessionStatus(token);
-          setSessionVerified(true);
-        } catch (error) {
-          console.error("Session sync error:", error);
-          setSessionVerified(true);
-        }
-      } else {
+    const unsubscribe = onAuthChange(async (sessionUser) => {
+      setUser(sessionUser);
+      if (!sessionUser) {
         setAppUser(null);
-        setSessionVerified(false);
+        setLoading(false);
+        return;
       }
 
+      try {
+        await getAuthSessionStatus();
+      } catch (error) {
+        console.error("Session sync error:", error);
+      }
+      setLoading(false);
+    });
+
+    void reloadCurrentUser().then((existing) => {
+      setUser(existing);
       setLoading(false);
     });
 
@@ -107,47 +90,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.id) {
       setAppUser(null);
       return;
     }
 
-    const unsubscribe = subscribeToUser(
-      user.uid,
-      (userData) => {
-        setAppUser(userData);
-      },
-      (error) => {
-        console.error("Firestore user listener error:", error);
-      }
-    );
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
-    return () => unsubscribe();
-  }, [user?.uid]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToAppSettings((settings) => {
-      setAppSettings(settings);
-      setAppSettingsReady(true);
+    void import("@/lib/database").then(({ subscribeToUser }) => {
+      if (cancelled) return;
+      unsubscribe = subscribeToUser(
+        user.id,
+        (userData) => setAppUser(userData),
+        (error) => console.error("User listener error:", error)
+      );
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void import("@/lib/database").then(({ subscribeToAppSettings }) => {
+      if (cancelled) return;
+      unsubscribe = subscribeToAppSettings((settings) => {
+        setAppSettings(settings);
+        setAppSettingsReady(true);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   const signIn = async () => {
     setIsAuthActionLoading(true);
     try {
       const { error } = await signInWithGoogle();
-      if (error) {
-        const authError = error as { message?: string; code?: string };
-        if (
-          authError.message === "Sign-in already in progress" ||
-          authError.code === "auth/popup-closed-by-user"
-        ) {
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
       await refreshSession();
     } finally {
       setIsAuthActionLoading(false);
@@ -157,23 +145,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithStudentId = async (studentId: string, password: string) => {
     setIsAuthActionLoading(true);
     try {
-      const { customToken, mustChangePassword } = await postStudentLogin(studentId, password);
-      const { error } = await signInWithStudentCustomToken(customToken);
-      if (error) throw error;
+      const { mustChangePassword } = await postStudentLogin(studentId, password);
       return { mustChangePassword };
     } finally {
       setIsAuthActionLoading(false);
     }
   };
 
-  const signInWithCustomTokenHandler = async (customToken: string) => {
-    setIsAuthActionLoading(true);
-    try {
-      const { error } = await signInWithStudentCustomToken(customToken);
-      if (error) throw error;
-    } finally {
-      setIsAuthActionLoading(false);
-    }
+  const signInWithCustomTokenHandler = async (_customToken: string) => {
+    void _customToken;
+    throw new Error("Custom token auth was removed. Use Supabase session tokens.");
   };
 
   const logout = async () => {
@@ -187,9 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = appUser?.role === "admin";
-  const isStudentVerified =
-    isAdmin || appUser?.isStudentVerified === true || !!appUser?.studentId;
-
+  const isStudentVerified = isAdmin || appUser?.isStudentVerified === true || !!appUser?.studentId;
   const isBanned = appUser ? isUserBanned(appUser) : false;
   const timeoutRemaining = appUser ? getTimeoutRemaining(appUser) : 0;
   const mustChangePassword = appUser?.mustChangePassword === true;

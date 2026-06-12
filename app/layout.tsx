@@ -6,8 +6,8 @@ import { DataProvider } from "@/contexts/DataContext";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import AuthGuard from "@/components/auth/auth-guard";
-import { adminDb } from "@/lib/firebase-admin";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";
+import { createClient } from "@/lib/supabase/server";
 
 // โหลดฟอนต์ Kanit สำหรับภาษาไทย
 const kanit = Kanit({
@@ -17,15 +17,14 @@ const kanit = Kanit({
   display: "swap",
 });
 
-export const revalidate = 0;
-
 export async function generateMetadata(): Promise<Metadata> {
-  const settings = await adminDb
-    .collection("settings")
-    .doc("appSettings")
-    .get()
-    .then((doc) => doc.data() || {})
-    .catch(() => ({} as Record<string, unknown>));
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("app_settings")
+    .select("settings")
+    .eq("id", "default");
+  const settings =
+    ((data?.[0]?.settings as Record<string, unknown> | undefined) || {}) as Record<string, unknown>;
 
   const title =
     (settings.ogTitle as string | undefined) || DEFAULT_APP_SETTINGS.ogTitle || "foundu.forum";
@@ -81,6 +80,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" suppressHydrationWarning data-scroll-behavior="smooth">
+      <head>
+        {process.env.NEXT_PUBLIC_SUPABASE_URL ? (
+          <link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} />
+        ) : null}
+        <link rel="preconnect" href="https://lh3.googleusercontent.com" />
+        <link rel="dns-prefetch" href="https://api.supabase.com" />
+      </head>
       <body className={`${kanit.variable} antialiased font-sans`} suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider

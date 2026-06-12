@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { DashboardListSkeleton } from "@/components/layout/app-shell-skeleton";
 import {
-  Loader2,
   MapPin,
   Radio,
   Search,
@@ -28,7 +28,7 @@ import { cn, formatThaiDate } from "@/lib/utils";
 import {
   subscribeToLostItemsByUserId,
   subscribeToFoundItemsByUserId,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import { fetchMyNfcDashboardApi } from "@/lib/nfc-api";
 
 const LIST_LIMIT = 5;
@@ -194,7 +194,7 @@ export function HomeDashboardSection({
     (mainPanel === "items" ? itemsLoading : nfcLoading);
 
   return (
-    <section className={cn("mt-8", className)}>
+    <section className={cn("mt-8 min-h-[16rem]", className)}>
       <div className="flex items-center justify-between gap-2 mb-3">
         <h2 className="text-lg font-semibold text-text-primary md:text-2xl min-w-0 truncate">
           {sectionTitle}
@@ -275,9 +275,7 @@ export function HomeDashboardSection({
       />
 
       {authLoading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-line-green" />
-        </div>
+        <DashboardListSkeleton rows={3} />
       ) : !userId ? (
         <div className="text-center py-8 bg-bg-secondary rounded-2xl border border-border-light">
           <p className="text-text-secondary text-sm mb-4">
@@ -295,9 +293,7 @@ export function HomeDashboardSection({
           )}
         </div>
       ) : loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-line-green" />
-        </div>
+        <DashboardListSkeleton rows={3} />
       ) : mainPanel === "items" ? (
         displayItems.length === 0 ? (
           <div className="text-center py-8 text-text-secondary bg-bg-secondary rounded-2xl">

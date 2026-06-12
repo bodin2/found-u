@@ -3,8 +3,10 @@ import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
+import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminDb } from "@/lib/firebase-admin";
+import { parseJsonBody } from "@/lib/parse-request";
 import {
   getOrigin,
   getRpId,
@@ -14,14 +16,23 @@ import {
   STUDENT_ACCOUNTS_COLLECTION,
 } from "@/lib/student-auth-server";
 import { newChallengeKey, storeChallenge } from "@/lib/passkey-challenge-store";
-import { FieldValue } from "firebase-admin/firestore";
+
+const passkeyRegisterVerifyBodySchema = z.object({
+  challengeKey: z.string().min(1, "challengeKey ไม่ถูกต้อง"),
+  response: z.record(z.string(), z.unknown()),
+});
+
+async function getStudentIdFromProfile(uid: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("profiles").select("student_id").eq("id", uid).maybeSingle();
+  return (data?.student_id as string | null | undefined) ?? null;
+}
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-  const studentId = userDoc.data()?.studentId as string | undefined;
+  const studentId = await getStudentIdFromProfile(authUser.uid);
   if (!studentId) return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
 
   const account = await getStudentAccount(studentId);
@@ -55,8 +66,10 @@ export async function PUT(request: NextRequest) {
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await request.json();
-    const { challengeKey, response } = body;
+    const parsed = await parseJsonBody(request, passkeyRegisterVerifyBodySchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+
+    const { challengeKey, response } = parsed.data;
     const { consumeChallenge } = await import("@/lib/passkey-challenge-store");
     const stored = consumeChallenge(challengeKey);
     if (!stored?.studentId) {
@@ -64,7 +77,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const verification = await verifyRegistrationResponse({
-      response,
+      response: response as any,
       expectedChallenge: stored.challenge,
       expectedOrigin: getOrigin(request),
       expectedRPID: getRpId(request),
@@ -76,29 +89,55 @@ export async function PUT(request: NextRequest) {
 
     const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
     const studentId = normalizeStudentId(stored.studentId);
+    const admin = createAdminClient();
+    const account = await getStudentAccount(studentId);
+    if (!account) {
+      return NextResponse.json({ error: "ไม่พบบัญชีนักเรียน" }, { status: 404 });
+    }
 
-    await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(studentId).set(
-      {
-        passkeyCredentials: FieldValue.arrayUnion({
-          credentialId: credential.id,
-          publicKey: Buffer.from(credential.publicKey).toString("base64url"),
-          counter: credential.counter,
-          deviceType: credentialDeviceType,
-          backedUp: credentialBackedUp,
-          createdAt: new Date().toISOString(),
-        }),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const existingCredentials = account.passkeyCredentials ?? [];
+    const responseRecord = response as Record<string, unknown>;
+    const responsePayload =
+      responseRecord.response && typeof responseRecord.response === "object"
+        ? (responseRecord.response as Record<string, unknown>)
+        : {};
 
-    await adminDb.collection("users").doc(authUser.uid).set(
+    const nextCredentials = [
+      ...existingCredentials.filter((item) => item.credentialId !== credential.id),
       {
-        authMethods: FieldValue.arrayUnion("passkey"),
-        updatedAt: FieldValue.serverTimestamp(),
+        credentialId: credential.id,
+        publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+        counter: credential.counter,
+        transports: responsePayload.transports as string[] | undefined,
+        deviceType: credentialDeviceType,
+        backedUp: credentialBackedUp,
+        createdAt: new Date(),
       },
-      { merge: true }
-    );
+    ];
+
+    await admin
+      .from(STUDENT_ACCOUNTS_COLLECTION)
+      .update({
+        passkey_credentials: nextCredentials,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("student_id", studentId);
+
+    const { data: profileData } = await admin
+      .from("profiles")
+      .select("auth_methods")
+      .eq("id", authUser.uid)
+      .maybeSingle();
+    const existingMethods = Array.isArray(profileData?.auth_methods)
+      ? (profileData.auth_methods as string[])
+      : [];
+    await admin
+      .from("profiles")
+      .update({
+        auth_methods: Array.from(new Set([...existingMethods, "passkey"])),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", authUser.uid);
 
     await savePasskeyLookup(credential.id, studentId);
 
@@ -113,8 +152,7 @@ export async function GET(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-  const studentId = userDoc.data()?.studentId as string | undefined;
+  const studentId = await getStudentIdFromProfile(authUser.uid);
   if (!studentId) return NextResponse.json({ hasPasskey: false, count: 0 });
 
   const account = await getStudentAccount(studentId);
@@ -126,27 +164,41 @@ export async function DELETE(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-  const studentId = userDoc.data()?.studentId as string | undefined;
+  const studentId = await getStudentIdFromProfile(authUser.uid);
   if (!studentId) {
     return NextResponse.json({ error: "ไม่พบข้อมูลนักเรียน" }, { status: 400 });
   }
+  const admin = createAdminClient();
+  const account = await getStudentAccount(studentId);
+  const credentialIds = (account?.passkeyCredentials ?? []).map((item) => item.credentialId);
 
-  await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(normalizeStudentId(studentId)).set(
-    {
-      passkeyCredentials: [],
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({
+      passkey_credentials: [],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("student_id", normalizeStudentId(studentId));
 
-  await adminDb.collection("users").doc(authUser.uid).set(
-    {
-      authMethods: FieldValue.arrayRemove("passkey"),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  if (credentialIds.length > 0) {
+    await admin.from("passkey_lookup").delete().in("credential_id", credentialIds);
+  }
+
+  const { data: profileData } = await admin
+    .from("profiles")
+    .select("auth_methods")
+    .eq("id", authUser.uid)
+    .maybeSingle();
+  const nextMethods = Array.isArray(profileData?.auth_methods)
+    ? (profileData.auth_methods as string[]).filter((method) => method !== "passkey")
+    : [];
+  await admin
+    .from("profiles")
+    .update({
+      auth_methods: nextMethods,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", authUser.uid);
 
   return NextResponse.json({ success: true });
 }

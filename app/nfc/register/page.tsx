@@ -20,7 +20,7 @@ import {
   subscribeToContactTypes,
   type CategoryConfig,
   type ContactTypeConfig,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcTagRegistered } from "@/lib/logger";

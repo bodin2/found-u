@@ -27,7 +27,7 @@ import { cn, formatThaiDate, generateTrackingCode } from "@/lib/utils";
 import { buildTagUrl, isWebNfcSupported } from "@/lib/nfc";
 import {
   addLostItem,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import {
   updateNfcTagStatusApi,
   fetchMyNfcDashboardApi,

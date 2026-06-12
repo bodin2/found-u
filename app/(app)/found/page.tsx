@@ -47,7 +47,7 @@ import {
   subscribeToContactTypes,
   type CategoryConfig,
   type ContactTypeConfig,
-} from "@/lib/firestore";
+} from "@/lib/database";
 import { uploadFoundItemImage } from "@/lib/storage";
 import {
   getCompressionOptionsFromSettings,

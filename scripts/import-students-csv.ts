@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Import student CSV via Admin SDK (dev/test)
+ * Import student CSV via Supabase admin API (dev/test)
  * Usage: bun run scripts/import-students-csv.ts --file students-test.csv [--dry-run]
  */
 

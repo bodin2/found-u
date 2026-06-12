@@ -19,8 +19,6 @@ import {
     Zap,
     RefreshCw,
 } from "lucide-react";
-import { collection, query, where, onSnapshot, updateDoc, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { cn, formatThaiDate } from "@/lib/utils";
 import { findMatchesForLostItem, findMatchesForFoundItem, MatchScore, getMatchConfidence } from "@/lib/matching";
 import { logItemMatched } from "@/lib/logger";
@@ -28,6 +26,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { useCategories } from "@/contexts/DataContext";
 import type { LostItem, FoundItem } from "@/lib/types";
+import { subscribeToLostItems, subscribeToFoundItems, updateLostItem, updateFoundItem } from "@/lib/database";
 
 // Confidence colors
 const CONFIDENCE_COLORS = {
@@ -68,35 +67,23 @@ export default function AdminMatchingPage() {
 
     // Load items
     useEffect(() => {
-        let loadedCount = 0;
+        let gotLost = false;
+        let gotFound = false;
         const checkLoaded = () => {
-            loadedCount++;
-            if (loadedCount >= 2) {
-                setLoading(false);
-            }
+            if (gotLost && gotFound) setLoading(false);
         };
 
-        // Lost items (searching only)
-        const unsubLost = onSnapshot(
-            query(collection(db, "lostItems"), where("status", "==", "searching")),
-            (snapshot) => {
-                const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as LostItem));
-                setLostItems(items);
-                checkLoaded();
-            },
-            () => checkLoaded()
-        );
+        const unsubLost = subscribeToLostItems((items) => {
+            setLostItems(items.filter((item) => item.status === "searching"));
+            gotLost = true;
+            checkLoaded();
+        });
 
-        // Found items (found status only)
-        const unsubFound = onSnapshot(
-            query(collection(db, "foundItems"), where("status", "==", "found")),
-            (snapshot) => {
-                const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as FoundItem));
-                setFoundItems(items);
-                checkLoaded();
-            },
-            () => checkLoaded()
-        );
+        const unsubFound = subscribeToFoundItems((items) => {
+            setFoundItems(items.filter((item) => item.status === "found"));
+            gotFound = true;
+            checkLoaded();
+        });
 
         return () => {
             unsubLost();
@@ -182,12 +169,12 @@ export default function AdminMatchingPage() {
 
         try {
             // Update both items with matched IDs
-            await updateDoc(doc(db, "lostItems", lostId), {
+            await updateLostItem(lostId, {
                 matchedFoundId: foundId,
                 status: "found",
             });
 
-            await updateDoc(doc(db, "foundItems", foundId), {
+            await updateFoundItem(foundId, {
                 matchedLostId: lostId,
                 status: "claimed",
             });

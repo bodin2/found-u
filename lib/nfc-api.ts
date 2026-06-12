@@ -1,10 +1,9 @@
-import { auth } from "@/lib/auth";
+import { getSessionToken } from "@/lib/auth";
 import type { ContactInfo, ItemCategory, NfcFoundReport, NfcTag, NfcTagStatus } from "@/lib/types";
 
 async function getAuthHeaders(): Promise<HeadersInit> {
-  const user = auth.currentUser;
-  if (!user) throw new Error("not_authenticated");
-  const token = await user.getIdToken();
+  const token = await getSessionToken();
+  if (!token) throw new Error("not_authenticated");
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,

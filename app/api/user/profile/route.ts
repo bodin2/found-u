@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminDb } from "@/lib/firebase-admin";
+import { parseJsonBody } from "@/lib/parse-request";
 
 const SHOWN_NAME_MAX = 40;
+const profilePatchSchema = z.object({
+  shownName: z.string().trim().max(SHOWN_NAME_MAX).optional(),
+});
 
 export async function PATCH(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -12,20 +16,19 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const shownName = (body.shownName as string | undefined)?.trim() ?? "";
+    const parsed = await parseJsonBody(request, profilePatchSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const shownName = parsed.data.shownName?.trim() ?? "";
 
-    if (shownName.length > SHOWN_NAME_MAX) {
-      return NextResponse.json(
-        { error: `ชื่อที่แสดงต้องไม่เกิน ${SHOWN_NAME_MAX} ตัวอักษร` },
-        { status: 400 }
-      );
-    }
-
-    await adminDb.collection("users").doc(authUser.uid).update({
-      shownName: shownName || FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("profiles")
+      .update({
+        shown_name: shownName || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", authUser.uid);
+    if (error) throw error;
 
     return NextResponse.json({ ok: true, shownName: shownName || null });
   } catch (error) {

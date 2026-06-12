@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { MapPin, Save, Loader2, CheckCircle } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { getAppSettings, updateAppSettings } from "@/lib/firestore";
+import { getAppSettings, updateAppSettings } from "@/lib/database";
 import { normalizeGeoPolygon } from "@/lib/utils";
 import type { AppSettings } from "@/lib/types";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";

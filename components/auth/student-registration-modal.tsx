@@ -25,8 +25,7 @@ export function StudentRegistrationModal({ open }: StudentRegistrationModalProps
     setError(null);
     setLoading(true);
     try {
-      const token = await user.getIdToken();
-      const result = await postLinkGoogle(token, studentId, password);
+      const result = await postLinkGoogle(studentId, password);
       await refreshSession();
       if (result.mustChangePassword) {
         router.push("/login/change-password");

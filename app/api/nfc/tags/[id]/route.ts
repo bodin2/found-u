@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthRequest, updateNfcTagStatusAdmin } from "@/lib/nfc-server";
-import type { NfcTagStatus } from "@/lib/types";
+import { parseJsonBody } from "@/lib/parse-request";
+import { updateNfcTagStatusSchema } from "@/lib/validations/nfc";
 
 export async function PATCH(
   request: NextRequest,
@@ -13,17 +14,9 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { status, lostItemId } = body as { status?: NfcTagStatus; lostItemId?: string };
-
-    if (!status) {
-      return NextResponse.json({ error: "status required" }, { status: 400 });
-    }
-
-    const allowed: NfcTagStatus[] = ["active", "lost", "returned", "disabled"];
-    if (!allowed.includes(status)) {
-      return NextResponse.json({ error: "invalid status" }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, updateNfcTagStatusSchema);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const { status, lostItemId } = parsed.data;
 
     await updateNfcTagStatusAdmin(id, user.uid, status, lostItemId);
     return NextResponse.json({ success: true });

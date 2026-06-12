@@ -1,17 +1,18 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { signInStudentSession } from "@/lib/supabase/auth-session";
 import type {
   AppUser,
   ParsedStudentCsvRow,
   StudentAccount,
   StudentImportSummary,
 } from "@/lib/types";
+import type { Database } from "@/lib/database.types";
 
-export const STUDENT_ACCOUNTS_COLLECTION = "studentAccounts";
-export const ADMIN_WHITELIST_COLLECTION = "adminWhitelist";
-export const PASSKEY_LOOKUP_COLLECTION = "passkeyLookup";
+export const STUDENT_ACCOUNTS_COLLECTION = "student_accounts";
+export const ADMIN_WHITELIST_COLLECTION = "admin_whitelist";
+export const PASSKEY_LOOKUP_COLLECTION = "passkey_lookup";
 
 const SCRYPT_KEYLEN = 64;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -130,17 +131,25 @@ export function parseStudentCsvContent(content: string): {
 }
 
 export async function getStudentIdByPasskeyCredential(credentialId: string): Promise<string | null> {
-  const doc = await adminDb.collection(PASSKEY_LOOKUP_COLLECTION).doc(credentialId).get();
-  if (doc.exists) {
-    const studentId = doc.data()?.studentId as string | undefined;
-    if (studentId && isValidStudentId(studentId)) return normalizeStudentId(studentId);
+  const admin = createAdminClient();
+  const { data: lookup } = await admin
+    .from(PASSKEY_LOOKUP_COLLECTION)
+    .select("student_id")
+    .eq("credential_id", credentialId)
+    .maybeSingle();
+
+  if (lookup?.student_id && isValidStudentId(lookup.student_id)) {
+    return normalizeStudentId(lookup.student_id);
   }
 
-  const snapshot = await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).get();
-  for (const accountDoc of snapshot.docs) {
-    const credentials = accountDoc.data().passkeyCredentials as StudentAccount["passkeyCredentials"];
+  const { data: accounts } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .select("student_id, passkey_credentials");
+
+  for (const account of accounts || []) {
+    const credentials = account.passkey_credentials as StudentAccount["passkeyCredentials"];
     if (credentials?.some((c) => c.credentialId === credentialId)) {
-      const studentId = normalizeStudentId(accountDoc.id);
+      const studentId = normalizeStudentId(account.student_id);
       await savePasskeyLookup(credentialId, studentId);
       return studentId;
     }
@@ -149,10 +158,16 @@ export async function getStudentIdByPasskeyCredential(credentialId: string): Pro
 }
 
 export async function savePasskeyLookup(credentialId: string, studentId: string): Promise<void> {
-  await adminDb.collection(PASSKEY_LOOKUP_COLLECTION).doc(credentialId).set({
-    studentId: normalizeStudentId(studentId),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const admin = createAdminClient();
+  const { error } = await admin.from(PASSKEY_LOOKUP_COLLECTION).upsert(
+    {
+      credential_id: credentialId,
+      student_id: normalizeStudentId(studentId),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "credential_id" }
+  );
+  if (error) throw error;
 }
 
 export function studentIdFromPasskeyUserHandle(userHandle?: string): string | null {
@@ -167,66 +182,120 @@ export function studentIdFromPasskeyUserHandle(userHandle?: string): string | nu
 }
 
 export async function getStudentAccount(studentId: string): Promise<StudentAccount | null> {
-  const doc = await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(normalizeStudentId(studentId)).get();
-  if (!doc.exists) return null;
-  const data = doc.data()!;
+  const admin = createAdminClient();
+  const normalizedId = normalizeStudentId(studentId);
+  const { data } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .select("*")
+    .eq("student_id", normalizedId)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as Record<string, any>;
+
+  const createdAt = row.created_at ?? row.createdAt ?? new Date().toISOString();
+  const updatedAt = row.updated_at ?? row.updatedAt ?? new Date().toISOString();
+
   return {
-    studentId: data.studentId,
-    firstName: data.firstName,
-    lastName: data.lastName,
-    nickname: data.nickname,
-    schoolPasswordHash: data.schoolPasswordHash,
-    currentPasswordHash: data.currentPasswordHash,
-    mustChangePassword: data.mustChangePassword ?? true,
-    hasLoggedInOnce: data.hasLoggedInOnce ?? false,
-    linkedUid: data.linkedUid,
-    linkedGoogleEmail: data.linkedGoogleEmail,
-    pinHash: data.pinHash,
-    passkeyCredentials: data.passkeyCredentials,
-    status: data.status ?? "active",
-    importBatchId: data.importBatchId,
-    createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
-    updatedAt: (data.updatedAt as Timestamp)?.toDate?.() ?? new Date(),
+    studentId: row.student_id ?? row.studentId,
+    firstName: row.first_name ?? row.firstName,
+    lastName: row.last_name ?? row.lastName,
+    nickname: row.nickname,
+    schoolPasswordHash: row.school_password_hash ?? row.schoolPasswordHash,
+    currentPasswordHash: row.current_password_hash ?? row.currentPasswordHash,
+    mustChangePassword: (row.must_change_password ?? row.mustChangePassword) ?? true,
+    hasLoggedInOnce: (row.has_logged_in_once ?? row.hasLoggedInOnce) ?? false,
+    linkedUid: row.linked_uid ?? row.linkedUid ?? undefined,
+    linkedGoogleEmail: row.linked_google_email ?? row.linkedGoogleEmail ?? undefined,
+    pinHash: row.pin_hash ?? row.pinHash ?? undefined,
+    passkeyCredentials: (row.passkey_credentials ?? row.passkeyCredentials) ?? undefined,
+    status: (row.status ?? "active") as StudentAccount["status"],
+    importBatchId: row.import_batch_id ?? row.importBatchId ?? undefined,
+    createdAt: new Date(createdAt),
+    updatedAt: new Date(updatedAt),
   };
 }
 
 export async function isAdminWhitelisted(email: string): Promise<boolean> {
   const normalized = normalizeEmail(email);
-  const doc = await adminDb.collection(ADMIN_WHITELIST_COLLECTION).doc(normalized).get();
-  return doc.exists;
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from(ADMIN_WHITELIST_COLLECTION)
+    .select("email")
+    .eq("email", normalized)
+    .maybeSingle();
+  return !!data;
 }
 
-export async function ensureFirebaseUserForStudent(
+async function findAuthUserByEmail(email: string) {
+  const admin = createAdminClient();
+  let page = 1;
+  const perPage = 200;
+
+  while (page < 50) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const user = data.users.find((entry) => normalizeEmail(entry.email || "") === email);
+    if (user) return user;
+
+    if (!data.nextPage) break;
+    page = data.nextPage;
+  }
+
+  return null;
+}
+
+export async function ensureAuthUserForStudent(
   studentId: string,
   displayName: string,
   password?: string
 ): Promise<string> {
+  const admin = createAdminClient();
   const id = normalizeStudentId(studentId);
   const email = studentIdToAuthEmail(id);
-  let userRecord;
+  let userRecord = await findAuthUserByEmail(email);
 
-  try {
-    userRecord = await adminAuth.getUserByEmail(email);
-  } catch {
-    userRecord = await adminAuth.createUser({
+  if (!userRecord) {
+    const { data, error } = await admin.auth.admin.createUser({
       email,
       password: password || randomBytes(16).toString("hex"),
-      displayName,
-      emailVerified: true,
+      email_confirm: true,
+      user_metadata: {
+        display_name: displayName,
+        student_id: id,
+      },
     });
+    if (error || !data.user) throw error ?? new Error("create user failed");
+    userRecord = data.user;
   }
+
+  const updatePayload: Parameters<typeof admin.auth.admin.updateUserById>[1] = {
+    user_metadata: {
+      ...(userRecord.user_metadata || {}),
+      display_name: displayName,
+      student_id: id,
+    },
+  };
+  if (password) updatePayload.password = password;
+
+  const { data: updated, error } = await admin.auth.admin.updateUserById(userRecord.id, updatePayload);
+  if (error) throw error;
+  userRecord = updated.user ?? userRecord;
 
   if (password) {
-    await adminAuth.updateUser(userRecord.uid, { password, displayName });
-  } else if (displayName) {
-    await adminAuth.updateUser(userRecord.uid, { displayName });
+    // Ensure password provider login works right after sync
+    await signInStudentSession(id, password);
   }
 
-  return userRecord.uid;
+  return userRecord.id;
 }
 
+// Backward-compatible alias while routes are being migrated.
+export const ensureFirebaseUserForStudent = ensureAuthUserForStudent;
+
 export async function issueStudentCustomToken(uid: string): Promise<string> {
-  return adminAuth.createCustomToken(uid);
+  void uid;
+  throw new Error("Custom token flow removed. Use session tokens instead.");
 }
 
 export async function syncAppUserFromStudent(
@@ -234,34 +303,40 @@ export async function syncAppUserFromStudent(
   account: StudentAccount,
   extras?: Partial<AppUser>
 ): Promise<void> {
+  const admin = createAdminClient();
   const displayName = `${account.firstName} ${account.lastName}`.trim();
-  const userRef = adminDb.collection("users").doc(uid);
-  const existing = await userRef.get();
+  const { data: existing } = await admin.from("profiles").select("id").eq("id", uid).maybeSingle();
 
-  const base = {
-    uid,
-    email: studentIdToAuthEmail(account.studentId),
-    displayName,
-    studentId: account.studentId,
-    firstName: account.firstName,
-    lastName: account.lastName,
+  const now = new Date().toISOString();
+  const normalized: Database["public"]["Tables"]["profiles"]["Update"] = {
+    email: extras?.email ? normalizeEmail(extras.email) : studentIdToAuthEmail(account.studentId),
+    display_name: extras?.displayName || displayName,
+    student_id: account.studentId,
+    first_name: account.firstName,
+    last_name: account.lastName,
     nickname: account.nickname,
-    isStudentVerified: true,
-    mustChangePassword: account.mustChangePassword,
-    updatedAt: FieldValue.serverTimestamp(),
-    ...extras,
+    photo_url: (extras as { photoURL?: string })?.photoURL || null,
+    auth_methods: extras?.authMethods ?? null,
+    shown_name: extras?.shownName ?? null,
+    ban_status: extras?.banStatus ?? "none",
+    is_student_verified: true,
+    must_change_password: account.mustChangePassword,
+    updated_at: now,
   };
 
-  if (existing.exists) {
-    await userRef.set(base, { merge: true });
+  if (existing) {
+    const { error } = await admin.from("profiles").update(normalized).eq("id", uid);
+    if (error) throw error;
   } else {
-    await userRef.set({
-      ...base,
-      role: "user",
-      banStatus: "none",
-      hasSeenTutorial: false,
-      createdAt: FieldValue.serverTimestamp(),
+    const { error } = await admin.from("profiles").insert({
+      ...(normalized as Database["public"]["Tables"]["profiles"]["Insert"]),
+      id: uid,
+      role: extras?.role ?? "user",
+      has_seen_tutorial: extras?.hasSeenTutorial ?? false,
+      created_at: now,
+      updated_at: now,
     });
+    if (error) throw error;
   }
 }
 
@@ -271,23 +346,31 @@ export async function promoteAdminUser(
   displayName: string,
   photoURL?: string
 ): Promise<void> {
-  const userRef = adminDb.collection("users").doc(uid);
-  const existing = await userRef.get();
-  const payload: Record<string, unknown> = {
-    uid,
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("profiles").select("id").eq("id", uid).maybeSingle();
+  const now = new Date().toISOString();
+  const payload: Database["public"]["Tables"]["profiles"]["Update"] = {
     email: normalizeEmail(email),
-    displayName: displayName || email,
-    photoURL: photoURL || null,
+    display_name: displayName || email,
+    photo_url: photoURL || null,
     role: "admin",
-    isStudentVerified: true,
-    updatedAt: FieldValue.serverTimestamp(),
+    is_student_verified: true,
+    updated_at: now,
   };
-  if (!existing.exists) {
-    payload.banStatus = "none";
-    payload.hasSeenTutorial = false;
-    payload.createdAt = FieldValue.serverTimestamp();
+  if (!existing) {
+    const insertPayload: Database["public"]["Tables"]["profiles"]["Insert"] = {
+      ...(payload as Database["public"]["Tables"]["profiles"]["Insert"]),
+      id: uid,
+      ban_status: "none",
+      has_seen_tutorial: false,
+      created_at: now,
+    };
+    const { error } = await admin.from("profiles").insert(insertPayload);
+    if (error) throw error;
+    return;
   }
-  await userRef.set(payload, { merge: true });
+  const { error } = await admin.from("profiles").update(payload).eq("id", uid);
+  if (error) throw error;
 }
 
 export async function verifyStudentPassword(
@@ -319,7 +402,7 @@ export async function loginStudentWithPassword(
   studentId: string,
   password: string
 ): Promise<
-  | { ok: true; customToken: string; mustChangePassword: boolean; uid: string }
+  | { ok: true; access_token: string; refresh_token: string; mustChangePassword: boolean; uid: string }
   | { ok: false; error: string; retryAfterMs?: number }
 > {
   const id = normalizeStudentId(studentId);
@@ -340,30 +423,35 @@ export async function loginStudentWithPassword(
 
   let uid = account.linkedUid;
   if (!uid) {
-    uid = await ensureFirebaseUserForStudent(id, displayName, password);
+    uid = await ensureAuthUserForStudent(id, displayName, password);
   } else {
-    try {
-      await adminAuth.getUser(uid);
-    } catch {
-      uid = await ensureFirebaseUserForStudent(id, displayName, password);
-    }
+    const admin = createAdminClient();
+    const { data: authUser } = await admin.auth.admin.getUserById(uid);
+    if (!authUser?.user) {
+      uid = await ensureAuthUserForStudent(id, displayName, password);
+    } else {
+      await ensureAuthUserForStudent(id, displayName, password);
+    }    
   }
 
-  await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(id).set(
-    {
-      linkedUid: uid,
-      hasLoggedInOnce: true,
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  const admin = createAdminClient();
+  const { error: accountUpdateError } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({
+      linked_uid: uid,
+      has_logged_in_once: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("student_id", id);
+  if (accountUpdateError) throw accountUpdateError;
 
   await syncAppUserFromStudent(uid, { ...account, linkedUid: uid, hasLoggedInOnce: true });
 
-  const customToken = await issueStudentCustomToken(uid);
+  const session = await signInStudentSession(id, password);
   return {
     ok: true,
-    customToken,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
     mustChangePassword: account.mustChangePassword,
     uid,
   };
@@ -373,7 +461,7 @@ export async function loginStudentWithPin(
   studentId: string,
   pin: string
 ): Promise<
-  | { ok: true; customToken: string; mustChangePassword: boolean; uid: string }
+  | { ok: true; access_token: string; refresh_token: string; mustChangePassword: boolean; uid: string }
   | { ok: false; error: string; retryAfterMs?: number }
 > {
   const id = normalizeStudentId(studentId);
@@ -391,13 +479,7 @@ export async function loginStudentWithPin(
     return { ok: false, error: "กรุณาเข้าสู่ระบบด้วยรหัสผ่านก่อนตั้ง PIN" };
   }
 
-  const customToken = await issueStudentCustomToken(account.linkedUid);
-  return {
-    ok: true,
-    customToken,
-    mustChangePassword: account.mustChangePassword,
-    uid: account.linkedUid,
-  };
+  return { ok: false, error: "การเข้าสู่ระบบด้วย PIN อยู่ระหว่างปรับปรุงสำหรับ Supabase" };
 }
 
 export async function importStudentRows(
@@ -405,66 +487,72 @@ export async function importStudentRows(
   importBatchId: string,
   adminUid: string
 ): Promise<StudentImportSummary> {
+  const admin = createAdminClient();
   const summary: StudentImportSummary = { created: 0, updated: 0, skipped: 0, errors: [] };
 
   for (const row of rows) {
     try {
-      const ref = adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(row.studentId);
-      const existing = await ref.get();
+      const { data: existing } = await admin
+        .from(STUDENT_ACCOUNTS_COLLECTION)
+        .select("*")
+        .eq("student_id", row.studentId)
+        .maybeSingle();
       const displayName = `${row.firstName} ${row.lastName}`;
 
-      if (!existing.exists) {
+      if (!existing) {
         const schoolHash = hashSecret(row.password);
-        await ref.set({
-          studentId: row.studentId,
-          firstName: row.firstName,
-          lastName: row.lastName,
+        const { error } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).insert({
+          student_id: row.studentId,
+          first_name: row.firstName,
+          last_name: row.lastName,
           nickname: row.nickname,
-          schoolPasswordHash: schoolHash,
-          currentPasswordHash: schoolHash,
-          mustChangePassword: true,
-          hasLoggedInOnce: false,
+          school_password_hash: schoolHash,
+          current_password_hash: schoolHash,
+          must_change_password: true,
+          has_logged_in_once: false,
           status: "active",
-          importBatchId,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
+          import_batch_id: importBatchId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         });
-        await ensureFirebaseUserForStudent(row.studentId, displayName, row.password);
+        if (error) throw error;
+        await ensureAuthUserForStudent(row.studentId, displayName, row.password);
         summary.created += 1;
         continue;
       }
 
-      const data = existing.data()!;
-      const hasLoggedInOnce = data.hasLoggedInOnce === true;
+      const hasLoggedInOnce = existing.has_logged_in_once === true;
 
       if (hasLoggedInOnce) {
-        await ref.set(
-          {
-            firstName: row.firstName,
-            lastName: row.lastName,
+        const { error } = await admin
+          .from(STUDENT_ACCOUNTS_COLLECTION)
+          .update({
+            first_name: row.firstName,
+            last_name: row.lastName,
             nickname: row.nickname,
-            importBatchId,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
+            import_batch_id: importBatchId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("student_id", row.studentId);
+        if (error) throw error;
         summary.updated += 1;
       } else {
         const schoolHash = hashSecret(row.password);
-        await ref.set(
-          {
-            firstName: row.firstName,
-            lastName: row.lastName,
+        const { error } = await admin
+          .from(STUDENT_ACCOUNTS_COLLECTION)
+          .update({
+            first_name: row.firstName,
+            last_name: row.lastName,
             nickname: row.nickname,
-            schoolPasswordHash: schoolHash,
-            currentPasswordHash: schoolHash,
-            mustChangePassword: true,
-            importBatchId,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-        await ensureFirebaseUserForStudent(row.studentId, displayName, row.password);
+            school_password_hash: schoolHash,
+            current_password_hash: schoolHash,
+            must_change_password: true,
+            import_batch_id: importBatchId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("student_id", row.studentId);
+        if (error) throw error;
+        await ensureAuthUserForStudent(row.studentId, displayName, row.password);
         summary.updated += 1;
       }
     } catch (err) {

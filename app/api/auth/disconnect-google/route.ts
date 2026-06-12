@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyAuthRequest } from "@/lib/nfc-server";
-import { adminDb } from "@/lib/firebase-admin";
-import {
-  STUDENT_ACCOUNTS_COLLECTION,
-  studentIdToAuthEmail,
-} from "@/lib/student-auth-server";
+import { studentIdToAuthEmail } from "@/lib/student-auth-server";
+import type { Database } from "@/lib/database.types";
 
 export async function POST(request: NextRequest) {
   const authUser = await verifyAuthRequest(request);
@@ -14,30 +11,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const userDoc = await adminDb.collection("users").doc(authUser.uid).get();
-    const studentId = userDoc.data()?.studentId as string | undefined;
+    const admin = createAdminClient();
+    const { data: profileData } = await admin
+      .from("profiles")
+      .select("student_id, auth_methods")
+      .eq("id", authUser.uid)
+      .maybeSingle();
+    const profile = profileData as { student_id?: string | null; auth_methods?: unknown } | null;
+    const studentId = profile?.student_id as string | undefined;
 
     if (studentId) {
-      await adminDb.collection(STUDENT_ACCOUNTS_COLLECTION).doc(studentId).set(
-        {
-          linkedGoogleEmail: FieldValue.delete(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await admin
+        .from("student_accounts")
+        .update({
+          linked_google_email: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("student_id", studentId);
     }
 
-    const userUpdates: Record<string, unknown> = {
-      authMethods: FieldValue.arrayRemove("google"),
-      photoURL: FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp(),
+    const methods = Array.isArray(profile?.auth_methods)
+      ? (profile.auth_methods as string[]).filter((method) => method !== "google")
+      : [];
+
+    const userUpdates: Database["public"]["Tables"]["profiles"]["Update"] = {
+      auth_methods: methods,
+      photo_url: null,
+      updated_at: new Date().toISOString(),
     };
     if (studentId) {
       userUpdates.email = studentIdToAuthEmail(studentId);
     }
 
-    await adminDb.collection("users").doc(authUser.uid).set(userUpdates, { merge: true });
-
+    await admin.from("profiles").update(userUpdates).eq("id", authUser.uid);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Disconnect Google error:", err);

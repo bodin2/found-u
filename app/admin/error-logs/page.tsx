@@ -7,12 +7,9 @@ import { useState, useEffect } from "react";
 import {
   AlertTriangle,
   Search,
-  Filter,
   Calendar,
   CheckCircle,
   Loader2,
-  RefreshCw,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
   Bug,
@@ -21,16 +18,7 @@ import {
   Database,
   HelpCircle,
 } from "lucide-react";
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  where,
-  Timestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { createClient } from "@/lib/supabase/client";
 import { resolveError } from "@/lib/logger";
 import { useAuth } from "@/contexts/auth-context";
 import type { ErrorSeverity, ErrorSource } from "@/lib/types";
@@ -49,9 +37,9 @@ interface ErrorLogItem {
   userAgent?: string;
   metadata?: Record<string, unknown>;
   resolved: boolean;
-  resolvedAt?: any;
+  resolvedAt?: Date;
   resolvedBy?: string;
-  createdAt: any;
+  createdAt: Date;
 }
 
 // Severity config
@@ -83,11 +71,12 @@ const SOURCE_CONFIG: Record<ErrorSource, { label: string; icon: React.ReactNode 
   client: { label: "Client", icon: <Globe className="w-4 h-4" /> },
   server: { label: "Server", icon: <Server className="w-4 h-4" /> },
   api: { label: "API", icon: <Bug className="w-4 h-4" /> },
-  firebase: { label: "Firebase", icon: <Database className="w-4 h-4" /> },
+  database: { label: "Database", icon: <Database className="w-4 h-4" /> },
   unknown: { label: "ไม่ทราบ", icon: <HelpCircle className="w-4 h-4" /> },
 };
 
 export default function AdminErrorLogsPage() {
+  const supabase = createClient();
   const { appUser } = useAuth();
   const [errors, setErrors] = useState<ErrorLogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,54 +90,81 @@ export default function AdminErrorLogsPage() {
 
   // Load errors
   useEffect(() => {
-    let constraints: any[] = [orderBy("createdAt", "desc"), limit(500)];
+    const loadErrors = async () => {
+      let startDate: Date | null = null;
 
-    // Apply date filter
-    if (dateRange !== "all") {
-      const now = new Date();
-      let startDate: Date;
-
-      switch (dateRange) {
-        case "today":
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          break;
-        case "week":
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case "month":
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
-        default:
-          startDate = new Date(0);
+      if (dateRange !== "all") {
+        const now = new Date();
+        switch (dateRange) {
+          case "today":
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case "week":
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case "month":
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            startDate = null;
+        }
       }
 
-      constraints = [
-        where("createdAt", ">=", Timestamp.fromDate(startDate)),
-        orderBy("createdAt", "desc"),
-        limit(500),
-      ];
-    }
+      let queryBuilder = supabase
+        .from("error_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
 
-    const q = query(collection(db, "errorLogs"), ...constraints);
-
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const errorsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ErrorLogItem[];
-        setErrors(errorsData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching error logs:", error);
-        setErrors([]);
-        setLoading(false);
+      if (startDate) {
+        queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
       }
-    );
 
-    return () => unsub();
+      const { data, error } = await queryBuilder;
+      if (error) throw error;
+
+      const errorsData: ErrorLogItem[] = (data ?? []).map((row) => ({
+        id: String(row.id),
+        message: String(row.message ?? ""),
+        stack: typeof row.stack === "string" ? row.stack : undefined,
+        severity: (String(row.severity ?? "medium") as ErrorSeverity),
+        source: (String(row.source ?? "unknown") as ErrorSource),
+        url: typeof row.url === "string" ? row.url : undefined,
+        userId: typeof row.user_id === "string" ? row.user_id : undefined,
+        userEmail: typeof row.user_email === "string" ? row.user_email : undefined,
+        userAgent: typeof row.user_agent === "string" ? row.user_agent : undefined,
+        metadata:
+          row.metadata && typeof row.metadata === "object"
+            ? (row.metadata as Record<string, unknown>)
+            : undefined,
+        resolved: row.resolved === true,
+        resolvedAt: row.resolved_at ? new Date(String(row.resolved_at)) : undefined,
+        resolvedBy: typeof row.resolved_by === "string" ? row.resolved_by : undefined,
+        createdAt: row.created_at ? new Date(String(row.created_at)) : new Date(),
+      }));
+
+      setErrors(errorsData);
+      setLoading(false);
+    };
+
+    void loadErrors().catch((error) => {
+      console.error("Error fetching error logs:", error);
+      setErrors([]);
+      setLoading(false);
+    });
+
+    const channel = supabase
+      .channel("admin-error-logs")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "error_logs" },
+        () => void loadErrors()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [dateRange]);
 
   // Handle resolve
@@ -309,7 +325,7 @@ export default function AdminErrorLogsPage() {
           <option value="client">Client</option>
           <option value="server">Server</option>
           <option value="api">API</option>
-          <option value="firebase">Firebase</option>
+          <option value="database">Database</option>
         </select>
 
         {/* Show Resolved Toggle */}
@@ -342,7 +358,7 @@ export default function AdminErrorLogsPage() {
             const severityConfig = SEVERITY_CONFIG[error.severity];
             const sourceConfig = SOURCE_CONFIG[error.source];
             const isExpanded = expandedError === error.id;
-            const createdAt = error.createdAt?.toDate?.() || new Date();
+            const createdAt = error.createdAt || new Date();
 
             return (
               <div
@@ -468,7 +484,7 @@ export default function AdminErrorLogsPage() {
                           แก้ไขโดย: {error.resolvedBy}
                           {error.resolvedAt && (
                             <span className="ml-2">
-                              เมื่อ {formatThaiDate(error.resolvedAt.toDate())}
+                              เมื่อ {formatThaiDate(error.resolvedAt)}
                             </span>
                           )}
                         </p>

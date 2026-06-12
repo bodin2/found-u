@@ -26,7 +26,7 @@ import {
   type LostItem,
 } from "@/lib/types";
 import { cn, formatThaiDate } from "@/lib/utils";
-import { getLostItemByTrackingCode, subscribeToLostItemsByUserId, timestampToDate } from "@/lib/firestore";
+import { getLostItemByTrackingCode, subscribeToLostItemsByUserId, timestampToDate } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
 import LoginPrompt from "@/components/auth/login-prompt";
 

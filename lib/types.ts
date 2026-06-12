@@ -207,7 +207,7 @@ export interface AppUser {
 
 // Error Log สำหรับเก็บ Errors ในระบบ
 export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
-export type ErrorSource = 'client' | 'server' | 'api' | 'firebase' | 'unknown';
+export type ErrorSource = 'client' | 'server' | 'api' | 'database' | 'unknown';
 
 export interface ErrorLog {
   id: string;
@@ -358,7 +358,7 @@ export interface LostItem {
   locationCoords?: LocationCoords;
   dateLost: Date;
   contacts: ContactInfo[]; // ช่องทางการติดต่อ
-  userId?: string; // Firebase Auth UID
+  userId?: string; // Supabase Auth UID
   status: ItemStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -381,7 +381,7 @@ export interface FoundItem {
   dateFound: Date;
   dropOffLocation: DropOffLocation;
   finderContacts?: ContactInfo[]; // ช่องทางการติดต่อผู้เจอ
-  userId?: string; // Firebase Auth UID
+  userId?: string; // Supabase Auth UID
   status: ItemStatus;
   /** ยืนยันโดยแอดมินว่าของถึงห้องบุคคลแล้ว */
   roomHandoverConfirmed?: boolean;
