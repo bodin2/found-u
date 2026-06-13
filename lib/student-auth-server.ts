@@ -203,7 +203,7 @@ export async function getStudentAccount(studentId: string): Promise<StudentAccou
     nickname: row.nickname,
     schoolPasswordHash: row.school_password_hash ?? row.schoolPasswordHash,
     currentPasswordHash: row.current_password_hash ?? row.currentPasswordHash,
-    mustChangePassword: (row.must_change_password ?? row.mustChangePassword) ?? true,
+    mustChangePassword: (row.must_change_password ?? row.mustChangePassword) ?? false,
     hasLoggedInOnce: (row.has_logged_in_once ?? row.hasLoggedInOnce) ?? false,
     linkedUid: row.linked_uid ?? row.linkedUid ?? undefined,
     linkedGoogleEmail: row.linked_google_email ?? row.linkedGoogleEmail ?? undefined,
@@ -399,11 +399,24 @@ export async function verifySchoolPassword(
   return { ok: true, account };
 }
 
+export function accountNeedsPinSetup(account: StudentAccount): boolean {
+  return account.hasLoggedInOnce && !account.pinHash;
+}
+
 export async function loginStudentWithPassword(
   studentId: string,
   password: string
 ): Promise<
-  | { ok: true; access_token: string; refresh_token: string; mustChangePassword: boolean; uid: string }
+  | {
+      ok: true;
+      access_token: string;
+      refresh_token: string;
+      mustChangePassword: boolean;
+      mustSetupPin: boolean;
+      uid: string;
+      studentId: string;
+      nickname: string;
+    }
   | { ok: false; error: string; retryAfterMs?: number }
 > {
   const id = normalizeStudentId(studentId);
@@ -449,12 +462,17 @@ export async function loginStudentWithPassword(
   await syncAppUserFromStudent(uid, { ...account, linkedUid: uid, hasLoggedInOnce: true });
 
   const session = await signInStudentSession(id, password);
+  const refreshed = await getStudentAccount(id);
+  const finalAccount = refreshed ?? { ...account, linkedUid: uid, hasLoggedInOnce: true };
   return {
     ok: true,
     access_token: session.access_token,
     refresh_token: session.refresh_token,
-    mustChangePassword: account.mustChangePassword,
+    mustChangePassword: finalAccount.mustChangePassword,
+    mustSetupPin: !finalAccount.pinHash,
     uid,
+    studentId: id,
+    nickname: finalAccount.nickname,
   };
 }
 
@@ -462,7 +480,16 @@ export async function loginStudentWithPin(
   studentId: string,
   pin: string
 ): Promise<
-  | { ok: true; access_token: string; refresh_token: string; mustChangePassword: boolean; uid: string }
+  | {
+      ok: true;
+      access_token: string;
+      refresh_token: string;
+      mustChangePassword: boolean;
+      mustSetupPin: boolean;
+      uid: string;
+      studentId: string;
+      nickname: string;
+    }
   | { ok: false; error: string; retryAfterMs?: number }
 > {
   const id = normalizeStudentId(studentId);
@@ -488,7 +515,10 @@ export async function loginStudentWithPin(
     access_token: session.access_token,
     refresh_token: session.refresh_token,
     mustChangePassword: account.mustChangePassword,
+    mustSetupPin: false,
     uid: account.linkedUid!,
+    studentId: id,
+    nickname: account.nickname,
   };
 }
 
@@ -518,7 +548,7 @@ export async function importStudentRows(
           nickname: row.nickname,
           school_password_hash: schoolHash,
           current_password_hash: schoolHash,
-          must_change_password: true,
+          must_change_password: false,
           has_logged_in_once: false,
           status: "active",
           import_batch_id: importBatchId,
@@ -556,7 +586,7 @@ export async function importStudentRows(
             nickname: row.nickname,
             school_password_hash: schoolHash,
             current_password_hash: schoolHash,
-            must_change_password: true,
+            must_change_password: false,
             import_batch_id: importBatchId,
             updated_at: new Date().toISOString(),
           })

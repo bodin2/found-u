@@ -20,6 +20,9 @@ export async function POST(request: Request) {
       access_token: result.access_token,
       refresh_token: result.refresh_token,
       mustChangePassword: result.mustChangePassword,
+      mustSetupPin: result.mustSetupPin,
+      studentId: result.studentId,
+      nickname: result.nickname,
       uid: result.uid,
     });
   } catch (err) {

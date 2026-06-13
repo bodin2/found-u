@@ -4,6 +4,9 @@ type SessionPayload = {
   access_token: string;
   refresh_token: string;
   mustChangePassword: boolean;
+  mustSetupPin?: boolean;
+  studentId?: string;
+  nickname?: string;
   uid?: string;
 };
 
@@ -23,12 +26,32 @@ async function handleSessionResponse(res: Response, fallbackMessage: string): Pr
   });
   if (error) throw error;
 
+  if (data.studentId) {
+    const { setRememberedDevice } = await import("@/lib/auth-device-memory");
+    setRememberedDevice({
+      studentId: data.studentId as string,
+      nickname: data.nickname as string | undefined,
+    });
+  }
+
   return {
     access_token: accessToken,
     refresh_token: refreshToken,
     mustChangePassword: Boolean(data.mustChangePassword),
+    mustSetupPin: Boolean(data.mustSetupPin),
+    studentId: data.studentId as string | undefined,
+    nickname: data.nickname as string | undefined,
     uid: data.uid as string | undefined,
   };
+}
+
+export function resolvePostLoginPath(payload: {
+  mustChangePassword?: boolean;
+  mustSetupPin?: boolean;
+}): string {
+  if (payload.mustChangePassword) return "/login/change-password";
+  if (payload.mustSetupPin) return "/login/setup-pin";
+  return "/home";
 }
 
 export async function postStudentLogin(studentId: string, password: string) {
@@ -162,8 +185,41 @@ export async function getAuthSessionStatus() {
     isStudentVerified: boolean;
     whitelisted?: boolean;
     mustChangePassword?: boolean;
+    mustSetupPin?: boolean;
+    hasPin?: boolean;
     studentId?: string | null;
   };
+}
+
+export async function getDeviceProfile(studentId: string) {
+  const res = await fetch(`/api/auth/device-profile?studentId=${encodeURIComponent(studentId)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
+  return data as {
+    exists: boolean;
+    studentId?: string;
+    nickname?: string;
+    firstName?: string;
+    hasLoggedInOnce?: boolean;
+    hasPin?: boolean;
+    quickUnlockAvailable?: boolean;
+  };
+}
+
+export async function postSetupPin(pin: string) {
+  const token = await getSessionToken();
+  if (!token) throw new Error("ยังไม่ได้เข้าสู่ระบบ");
+  const res = await fetch("/api/auth/pin/setup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ pin }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "ตั้ง PIN ไม่สำเร็จ");
+  return data as { success: boolean };
 }
 
 export async function getPasskeyStatus() {

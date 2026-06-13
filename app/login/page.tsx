@@ -2,20 +2,28 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
-import { AnimatePresence, m } from "framer-motion";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { m } from "framer-motion";
 import { useAuth } from "@/contexts/auth-context";
-import { Loader2, Package, KeyRound, Shield, Fingerprint } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { postPasskeyLogin, postPinLogin } from "@/lib/student-auth-api";
+import { Loader2, Package, Shield, Fingerprint, UserRound } from "lucide-react";
+import {
+  getDeviceProfile,
+  postPasskeyLogin,
+  postPinLogin,
+  postStudentLogin,
+  resolvePostLoginPath,
+} from "@/lib/student-auth-api";
+import {
+  clearRememberedDevice,
+  getRememberedDevice,
+  setRememberedDevice,
+} from "@/lib/auth-device-memory";
 import { MotionProvider } from "@/components/motion/motion-provider";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { slideUp } from "@/lib/motion";
 
-type LoginMode = "password" | "pin";
+type LoginView = "quick" | "full";
 
 const GoogleIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden>
@@ -54,17 +62,55 @@ function LoginPageContent() {
     user,
     loading,
     signIn,
-    signInWithStudentId,
     isStudentVerified,
     isAdmin,
     mustChangePassword,
+    mustSetupPin,
   } = useAuth();
-  const [mode, setMode] = useState<LoginMode>("password");
+
+  const [view, setView] = useState<LoginView>("full");
+  const [viewReady, setViewReady] = useState(false);
+  const [rememberedId, setRememberedId] = useState("");
+  const [rememberedName, setRememberedName] = useState("");
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [profileHint, setProfileHint] = useState<{
+    hasLoggedInOnce?: boolean;
+    quickUnlockAvailable?: boolean;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const initRememberedDevice = useCallback(async () => {
+    const remembered = getRememberedDevice();
+    if (!remembered?.studentId) {
+      setView("full");
+      setViewReady(true);
+      return;
+    }
+
+    try {
+      const profile = await getDeviceProfile(remembered.studentId);
+      if (profile.quickUnlockAvailable) {
+        setRememberedId(remembered.studentId);
+        setRememberedName(profile.nickname || profile.firstName || remembered.nickname || "");
+        setView("quick");
+      } else {
+        setStudentId(remembered.studentId);
+        setView("full");
+      }
+    } catch {
+      setStudentId(remembered.studentId);
+      setView("full");
+    } finally {
+      setViewReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void initRememberedDevice();
+  }, [initRememberedDevice]);
 
   useEffect(() => {
     const oauthError = searchParams.get("error");
@@ -78,17 +124,46 @@ function LoginPageContent() {
   useEffect(() => {
     if (user && !loading) {
       if (mustChangePassword) router.replace("/login/change-password");
+      else if (mustSetupPin) router.replace("/login/setup-pin");
       else if (isStudentVerified || isAdmin) router.replace("/home");
     }
-  }, [user, loading, router, mustChangePassword, isStudentVerified, isAdmin]);
+  }, [user, loading, router, mustChangePassword, mustSetupPin, isStudentVerified, isAdmin]);
+
+  useEffect(() => {
+    if (view !== "full" || studentId.length !== 5) {
+      setProfileHint(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void getDeviceProfile(studentId)
+        .then((profile) => {
+          if (profile.exists) {
+            setProfileHint({
+              hasLoggedInOnce: profile.hasLoggedInOnce,
+              quickUnlockAvailable: profile.quickUnlockAvailable,
+            });
+          } else {
+            setProfileHint(null);
+          }
+        })
+        .catch(() => setProfileHint(null));
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [studentId, view]);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const { mustChangePassword: needChange } = await signInWithStudentId(studentId, password);
-      router.push(needChange ? "/login/change-password" : "/home");
+      const result = await postStudentLogin(studentId, password);
+      setRememberedDevice({
+        studentId: result.studentId || studentId,
+        nickname: result.nickname,
+      });
+      router.push(resolvePostLoginPath(result));
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "เข้าสู่ระบบไม่สำเร็จ");
     } finally {
@@ -101,8 +176,8 @@ function LoginPageContent() {
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const { mustChangePassword: needChange } = await postPinLogin(studentId, pin);
-      router.push(needChange ? "/login/change-password" : "/home");
+      const result = await postPinLogin(rememberedId, pin);
+      router.push(resolvePostLoginPath(result));
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "PIN ไม่ถูกต้อง");
     } finally {
@@ -114,8 +189,8 @@ function LoginPageContent() {
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const { mustChangePassword: needChange } = await postPasskeyLogin();
-      router.push(needChange ? "/login/change-password" : "/home");
+      const result = await postPasskeyLogin();
+      router.push(resolvePostLoginPath(result));
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");
     } finally {
@@ -138,10 +213,31 @@ function LoginPageContent() {
     }
   };
 
-  const isRedirectingAfterLogin =
-    !!user && (mustChangePassword || isStudentVerified || isAdmin);
+  const switchToFullLogin = () => {
+    setView("full");
+    setPin("");
+    setErrorMsg(null);
+    if (rememberedId) setStudentId(rememberedId);
+  };
 
-  if (loading || isRedirectingAfterLogin) {
+  const switchAccount = () => {
+    clearRememberedDevice();
+    setRememberedId("");
+    setRememberedName("");
+    setStudentId("");
+    setPassword("");
+    setPin("");
+    setView("full");
+    setErrorMsg(null);
+  };
+
+  const isFirstLoginOnDevice = profileHint?.hasLoggedInOnce === false;
+  const showSecondaryOnFull = !isFirstLoginOnDevice;
+
+  const isRedirectingAfterLogin =
+    !!user && (mustChangePassword || mustSetupPin || isStudentVerified || isAdmin);
+
+  if (loading || !viewReady || isRedirectingAfterLogin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
         <Loader2 className="w-10 h-10 animate-spin text-line-green" />
@@ -158,53 +254,110 @@ function LoginPageContent() {
           </div>
           <div>
             <h1 className="font-bold text-text-primary">foundu.forum</h1>
-            <p className="text-xs text-text-tertiary">เข้าสู่ระบบนักเรียน</p>
+            <p className="text-xs text-text-tertiary">
+              {view === "quick" ? "ยินดีต้อนรับกลับ" : "เข้าสู่ระบบนักเรียน"}
+            </p>
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-md mx-auto w-full px-4 py-4 sm:py-6">
         <div className="bg-bg-primary rounded-2xl border border-border-light shadow-card p-5 sm:p-6">
-          <Shield className="w-7 h-7 text-line-green mb-2" />
-          <h2 className="text-xl font-bold text-text-primary mb-0.5">ยินดีต้อนรับ</h2>
-          <p className="text-sm text-text-secondary mb-4">ใช้เลขประจำตัวและรหัสผ่านจากโรงเรียน</p>
+          {view === "quick" ? (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-line-green/10 flex items-center justify-center">
+                  <UserRound className="w-6 h-6 text-line-green" />
+                </div>
+                <div>
+                  <p className="text-sm text-text-tertiary">สวัสดี</p>
+                  <h2 className="text-lg font-bold text-text-primary">
+                    {rememberedName || `นักเรียน ${rememberedId}`}
+                  </h2>
+                  <p className="text-xs text-text-tertiary font-mono">{rememberedId}</p>
+                </div>
+              </div>
 
-          <SegmentedTabs<LoginMode>
-            value={mode}
-            onChange={setMode}
-            items={[
-              { id: "password", label: "รหัสผ่าน", icon: KeyRound },
-              { id: "pin", label: "PIN", icon: Shield },
-            ]}
-            className="mb-4"
-          />
+              <form onSubmit={handlePinLogin} className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">
+                    ใส่ PIN 6 หลัก
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full px-4 py-3 rounded-xl border border-border-light bg-bg-primary font-mono text-2xl tracking-[0.5em] text-center"
+                    placeholder="••••••"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <SubmitButton loading={submitting} label="เข้าสู่ระบบ" />
+              </form>
 
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-text-secondary mb-1">
-              เลขประจำตัว (5 หลัก)
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={5}
-              value={studentId}
-              onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary font-mono text-lg tracking-widest"
-              placeholder="12345"
-            />
-          </div>
+              <div className="mt-4 space-y-2">
+                <button
+                  type="button"
+                  onClick={handlePasskeyLogin}
+                  disabled={submitting}
+                  className={secondaryButtonClass}
+                >
+                  {submitting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Fingerprint className="w-5 h-5 text-text-secondary" />
+                  )}
+                  เข้าด้วย PassKey
+                </button>
+                <div className="flex justify-between text-sm pt-1">
+                  <Link href="/login/forgot-pin" className="text-line-green hover:underline">
+                    ลืม PIN?
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={switchToFullLogin}
+                    className="text-text-secondary hover:text-text-primary"
+                  >
+                    เข้าด้วยวิธีอื่น
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <Shield className="w-7 h-7 text-line-green mb-2" />
+              <h2 className="text-xl font-bold text-text-primary mb-0.5">ยินดีต้อนรับ</h2>
+              <p className="text-sm text-text-secondary mb-4">
+                {isFirstLoginOnDevice
+                  ? "ครั้งแรกใช้เลขประจำตัวและรหัสผ่านจากโรงเรียน"
+                  : "ใช้เลขประจำตัวและรหัสผ่าน หรือ Google ที่เชื่อมไว้"}
+              </p>
 
-          <AnimatePresence mode="wait">
-            {mode === "password" ? (
               <m.form
-                key="password"
                 onSubmit={handlePasswordLogin}
                 className="space-y-3"
                 initial={reduced ? false : slideUp.initial}
                 animate={slideUp.animate}
-                exit={slideUp.exit}
                 transition={slideUp.transition}
               >
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">
+                    เลขประจำตัว (5 หลัก)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary font-mono text-lg tracking-widest"
+                    placeholder="12345"
+                    required
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1">
                     รหัสผ่าน
@@ -221,78 +374,58 @@ function LoginPageContent() {
                   href="/login/reset-password"
                   className="text-sm text-line-green hover:underline block"
                 >
-                  ลืมรหัสผ่าน? ใช้รหัสจากโรงเรียนเพื่อรีเซ็ต
+                  ลืมรหัสผ่าน?
                 </Link>
                 <SubmitButton loading={submitting} label="เข้าสู่ระบบ" />
               </m.form>
-            ) : (
-              <m.form
-                key="pin"
-                onSubmit={handlePinLogin}
-                className="space-y-3"
-                initial={reduced ? false : slideUp.initial}
-                animate={slideUp.animate}
-                exit={slideUp.exit}
-                transition={slideUp.transition}
-              >
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    PIN 6 หลัก
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary font-mono text-lg tracking-widest"
-                    required
-                  />
+
+              {showSecondaryOnFull && (
+                <div className="mt-4 space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={submitting}
+                    className={secondaryButtonClass}
+                  >
+                    <GoogleIcon />
+                    เข้าสู่ระบบด้วย Google
+                  </button>
+                  {!compactViewport && (
+                    <p className="text-xs text-text-tertiary text-center">
+                      ใช้ได้เมื่อเคยเชื่อมบัญชี Google แล้ว
+                    </p>
+                  )}
                 </div>
-                <p className="text-xs text-text-tertiary">ตั้ง PIN ได้หลังเข้าสู่ระบบที่หน้าตั้งค่า</p>
-                <SubmitButton loading={submitting} label="เข้าด้วย PIN" />
-              </m.form>
-            )}
-          </AnimatePresence>
+              )}
+
+              {rememberedId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setView("quick");
+                    setErrorMsg(null);
+                  }}
+                  className="w-full mt-4 text-sm text-line-green hover:underline"
+                >
+                  กลับไปหน้า PIN
+                </button>
+              )}
+
+              {getRememberedDevice() && (
+                <button
+                  type="button"
+                  onClick={switchAccount}
+                  className="w-full mt-2 text-sm text-text-tertiary hover:text-text-secondary"
+                >
+                  ใช้บัญชีอื่น
+                </button>
+              )}
+            </>
+          )}
 
           {errorMsg && (
             <p className="mt-3 text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
           )}
-
-          <div className="mt-4">
-            <CollapsibleSection
-              title="เข้าสู่ระบบด้วยวิธีอื่น"
-              defaultOpen={!compactViewport}
-            >
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handlePasskeyLogin}
-                  disabled={submitting}
-                  className={secondaryButtonClass}
-                >
-                  {submitting ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Fingerprint className="w-5 h-5 text-text-secondary" />
-                  )}
-                  เข้าด้วย PassKey
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={submitting}
-                  className={secondaryButtonClass}
-                >
-                  <GoogleIcon />
-                  เข้าสู่ระบบด้วย Google
-                </button>
-                <p className="text-xs text-text-tertiary text-center pt-1">
-                  PassKey ใช้ได้กับบัญชีที่ลงทะเบียนแล้ว · Google ครั้งแรกต้องยืนยันตัวตน
-                </p>
-              </div>
-            </CollapsibleSection>
-          </div>
         </div>
       </main>
     </div>

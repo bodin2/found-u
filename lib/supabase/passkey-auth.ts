@@ -46,7 +46,12 @@ async function parseAuthError(res: Response, fallback: string): Promise<never> {
   throw new Error(body.msg || body.message || body.error || fallback);
 }
 
-export async function signInWithSupabasePasskey(): Promise<{ mustChangePassword: boolean }> {
+export async function signInWithSupabasePasskey(): Promise<{
+  mustChangePassword: boolean;
+  mustSetupPin: boolean;
+  studentId?: string;
+  nickname?: string;
+}> {
   const optionsRes = await fetch(`${supabaseUrl()}/auth/v1/passkeys/authentication/options`, {
     method: "POST",
     headers: authHeaders(),
@@ -91,8 +96,22 @@ export async function signInWithSupabasePasskey(): Promise<{ mustChangePassword:
   const statusRes = await fetch("/api/auth/link-google", {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
-  const status = (await statusRes.json()) as { mustChangePassword?: boolean };
-  return { mustChangePassword: Boolean(status.mustChangePassword) };
+  const status = (await statusRes.json()) as {
+    mustChangePassword?: boolean;
+    mustSetupPin?: boolean;
+    studentId?: string | null;
+  };
+
+  if (status.studentId) {
+    const { setRememberedDevice } = await import("@/lib/auth-device-memory");
+    setRememberedDevice({ studentId: status.studentId });
+  }
+
+  return {
+    mustChangePassword: Boolean(status.mustChangePassword),
+    mustSetupPin: Boolean(status.mustSetupPin),
+    studentId: status.studentId || undefined,
+  };
 }
 
 export async function registerSupabasePasskey(): Promise<void> {

@@ -4,6 +4,7 @@ import { verifyAuthRequest } from "@/lib/nfc-server";
 import { parseJsonBody } from "@/lib/parse-request";
 import { linkGoogleSchema } from "@/lib/validations/auth";
 import {
+  accountNeedsPinSetup,
   getStudentAccount,
   isAdminWhitelisted,
   normalizeEmail,
@@ -104,11 +105,24 @@ export async function GET(request: NextRequest) {
     | { role?: string | null; is_student_verified?: boolean | null; must_change_password?: boolean | null; student_id?: string | null }
     | null;
 
+  let hasPin = false;
+  let mustSetupPin = false;
+  const studentId = profile?.student_id;
+  if (studentId) {
+    const account = await getStudentAccount(studentId);
+    if (account) {
+      hasPin = !!account.pinHash;
+      mustSetupPin = accountNeedsPinSetup(account);
+    }
+  }
+
   return NextResponse.json({
     isAdmin: profile?.role === "admin",
     isStudentVerified: profile?.is_student_verified === true || profile?.role === "admin",
     whitelisted: false,
     mustChangePassword: profile?.must_change_password === true,
-    studentId: profile?.student_id || null,
+    mustSetupPin,
+    hasPin,
+    studentId: studentId || null,
   });
 }

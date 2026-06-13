@@ -27,12 +27,13 @@ interface AuthContextType {
   isStudentVerified: boolean;
   hasSeenTutorial: boolean;
   mustChangePassword: boolean;
+  mustSetupPin: boolean;
   isBanned: boolean;
   banStatus: BanStatus;
   banReason: string | undefined;
   timeoutRemaining: number;
   signIn: () => Promise<void>;
-  signInWithStudentId: (studentId: string, password: string) => Promise<{ mustChangePassword: boolean }>;
+  signInWithStudentId: (studentId: string, password: string) => Promise<{ mustChangePassword: boolean; mustSetupPin: boolean }>;
   signInWithCustomToken: (_customToken: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appSettingsReady, setAppSettingsReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAuthActionLoading, setIsAuthActionLoading] = useState(false);
+  const [sessionFlags, setSessionFlags] = useState({ mustSetupPin: false });
 
   const refreshUserProfile = async () => {
     const uid = auth.currentUser?.id ?? user?.id;
@@ -74,9 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        await getAuthSessionStatus();
+        const status = await getAuthSessionStatus();
+        setSessionFlags({ mustSetupPin: Boolean(status.mustSetupPin) });
       } catch (error) {
         console.error("Session sync error:", error);
+        setSessionFlags({ mustSetupPin: false });
       }
       setLoading(false);
     });
@@ -145,8 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithStudentId = async (studentId: string, password: string) => {
     setIsAuthActionLoading(true);
     try {
-      const { mustChangePassword } = await postStudentLogin(studentId, password);
-      return { mustChangePassword };
+      const result = await postStudentLogin(studentId, password);
+      setSessionFlags({ mustSetupPin: Boolean(result.mustSetupPin) });
+      return {
+        mustChangePassword: result.mustChangePassword,
+        mustSetupPin: Boolean(result.mustSetupPin),
+      };
     } finally {
       setIsAuthActionLoading(false);
     }
@@ -172,6 +180,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isBanned = appUser ? isUserBanned(appUser) : false;
   const timeoutRemaining = appUser ? getTimeoutRemaining(appUser) : 0;
   const mustChangePassword = appUser?.mustChangePassword === true;
+  const hasPinMethod = Array.isArray(appUser?.authMethods) && appUser.authMethods.includes("pin");
+  const mustSetupPin =
+    !mustChangePassword &&
+    !isAdmin &&
+    (sessionFlags.mustSetupPin || (isStudentVerified && !hasPinMethod));
 
   return (
     <AuthContext.Provider
@@ -186,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isStudentVerified,
         hasSeenTutorial: appUser?.hasSeenTutorial || false,
         mustChangePassword,
+        mustSetupPin,
         isBanned,
         banStatus: appUser?.banStatus || "none",
         banReason: appUser?.banReason,

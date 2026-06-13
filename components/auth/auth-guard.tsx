@@ -11,6 +11,8 @@ const PUBLIC_PATHS = [
   "/",
   "/login",
   "/login/change-password",
+  "/login/setup-pin",
+  "/login/forgot-pin",
   "/login/reset-password",
   "/banned",
 ];
@@ -29,6 +31,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     isAdmin,
     hasSeenTutorial,
     mustChangePassword,
+    mustSetupPin,
     isBanned,
   } = useAuth();
   const router = useRouter();
@@ -36,7 +39,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [showTutorial, setShowTutorial] = useState(false);
 
   const needsStudentVerification =
-    !!user && !isBanned && !mustChangePassword && !isStudentVerified && !isAdmin;
+    !!user && !isBanned && !mustChangePassword && !mustSetupPin && !isStudentVerified && !isAdmin;
 
   useEffect(() => {
     if (loading) return;
@@ -54,6 +57,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (user && pathname === "/login") {
       if (mustChangePassword) {
         router.push("/login/change-password");
+      } else if (mustSetupPin) {
+        router.push("/login/setup-pin");
       } else if (isStudentVerified || isAdmin) {
         router.push("/home");
       }
@@ -62,6 +67,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     if (user && mustChangePassword && pathname !== "/login/change-password") {
       router.push("/login/change-password");
+      return;
+    }
+
+    if (user && mustSetupPin && !isAdmin && pathname !== "/login/setup-pin") {
+      router.push("/login/setup-pin");
       return;
     }
 
@@ -79,6 +89,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname,
     router,
     mustChangePassword,
+    mustSetupPin,
     isStudentVerified,
     isAdmin,
     isBanned,
@@ -113,6 +124,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     user &&
     mustChangePassword &&
     pathname !== "/login/change-password"
+  ) {
+    return null;
+  }
+
+  if (
+    !loading &&
+    user &&
+    mustSetupPin &&
+    !isAdmin &&
+    pathname !== "/login/setup-pin"
   ) {
     return null;
   }
