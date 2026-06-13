@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { FeaturesMotionCarousel } from "@/components/landing/features-motion-carousel";
+import { ComingSoonCta } from "@/components/landing/coming-soon-cta";
 import CardSwap, { Card } from "@/components/ui/card-swap";
 import { MobileHeroPhone } from "@/components/landing/mobile-hero-phone";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -80,6 +81,27 @@ const features = [
 export function LandingPage() {
   const [heroImages, setHeroImages] = useState<HeroImage[]>([]);
   const [mobileHeroImages, setMobileHeroImages] = useState<HeroImage[]>([]);
+  const [comingSoon, setComingSoon] = useState(true);
+  const [comingSoonMessage, setComingSoonMessage] = useState("พบกันเร็วๆนี้");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/public-settings", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { comingSoonEnabled?: boolean; comingSoonMessage?: string }) => {
+        if (cancelled) return;
+        setComingSoon(Boolean(data.comingSoonEnabled));
+        if (data.comingSoonMessage) setComingSoonMessage(data.comingSoonMessage);
+      })
+      .catch(() => {
+        if (!cancelled) setComingSoon(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,12 +166,12 @@ export function LandingPage() {
           </Link>
           <div className="flex items-center gap-2 sm:gap-3">
             <AnimatedThemeToggler />
-            <Link
-              href="/login"
+            <ComingSoonCta
+              comingSoon={comingSoon}
+              message={comingSoonMessage}
+              label="เข้าสู่ระบบ"
               className="rounded-full bg-line-green px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-line-green-hover"
-            >
-              เข้าสู่ระบบ
-            </Link>
+            />
           </div>
         </div>
       </header>
@@ -219,13 +241,13 @@ export function LandingPage() {
                 ให้คุณประกาศติดตามของที่หายและของที่พบเจอได้รวดเร็วกว่าเดิม
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center md:justify-start">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-line-green px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-line-green/25 transition hover:bg-line-green-hover"
-                >
-                  เริ่มใช้งาน
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
+                <ComingSoonCta
+                  comingSoon={comingSoon}
+                  message={comingSoonMessage}
+                  label="เริ่มใช้งาน"
+                  showArrow
+                  className="rounded-full bg-line-green px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-line-green/25 transition hover:bg-line-green-hover"
+                />
                 <a
                   href="#วิธีใช้"
                   className="inline-flex items-center justify-center rounded-full border border-border-light bg-bg-card px-7 py-3.5 text-base font-medium text-text-primary transition hover:bg-bg-tertiary"
@@ -304,13 +326,13 @@ export function LandingPage() {
           <p className="mt-3 text-text-secondary">
             เข้าสู่ระบบด้วยรหัสนักเรียนของโรงเรียน แล้วเริ่มแจ้งหรือติดตามได้ทันที
           </p>
-          <Link
-            href="/login"
-            className="mt-8 inline-flex items-center gap-2 rounded-full bg-line-green px-8 py-3.5 font-semibold text-white transition hover:bg-line-green-hover"
-          >
-            เข้าสู่ระบบ
-            <ArrowRight className="h-5 w-5" />
-          </Link>
+          <ComingSoonCta
+            comingSoon={comingSoon}
+            message={comingSoonMessage}
+            label="เข้าสู่ระบบ"
+            showArrow
+            className="mt-8 rounded-full bg-line-green px-8 py-3.5 font-semibold text-white transition hover:bg-line-green-hover"
+          />
         </div>
       </section>
 

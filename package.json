@@ -9,6 +9,7 @@
     "lint": "eslint",
     "gen:students": "bun run scripts/generate-students-csv.ts",
     "import:students": "bun run scripts/import-students-csv.ts",
+    "create:admin": "bun run scripts/create-admin.ts",
     "test:login": "bun run scripts/test-student-login.ts"
   },
   "dependencies": {

@@ -15,6 +15,9 @@ export const STUDENT_ACCOUNTS_COLLECTION = "student_accounts";
 export const ADMIN_WHITELIST_COLLECTION = "admin_whitelist";
 export const PASSKEY_LOOKUP_COLLECTION = "passkey_lookup";
 
+/** เลขประจำตัวแอดมินระบบ (ล็อกอินด้วยรหัสผ่าน → role admin) */
+export const BOOTSTRAP_ADMIN_STUDENT_IDS = new Set(["11111"]);
+
 const SCRYPT_KEYLEN = 64;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 5;
@@ -249,7 +252,8 @@ async function findAuthUserByEmail(email: string) {
 export async function ensureAuthUserForStudent(
   studentId: string,
   displayName: string,
-  password?: string
+  password?: string,
+  options?: { verifyPasswordLogin?: boolean }
 ): Promise<string> {
   const admin = createAdminClient();
   const id = normalizeStudentId(studentId);
@@ -283,9 +287,12 @@ export async function ensureAuthUserForStudent(
   if (error) throw error;
   userRecord = updated.user ?? userRecord;
 
-  if (password) {
-    // Ensure password provider login works right after sync
-    await signInStudentSession(id, password);
+  if (password && options?.verifyPasswordLogin !== false) {
+    try {
+      await signInStudentSession(id, password);
+    } catch (err) {
+      console.warn("ensureAuthUserForStudent: password login verify skipped:", err);
+    }
   }
 
   return userRecord.id;
@@ -460,6 +467,18 @@ export async function loginStudentWithPassword(
   if (accountUpdateError) throw accountUpdateError;
 
   await syncAppUserFromStudent(uid, { ...account, linkedUid: uid, hasLoggedInOnce: true });
+
+  if (BOOTSTRAP_ADMIN_STUDENT_IDS.has(id)) {
+    await promoteAdminUser(uid, studentIdToAuthEmail(id), displayName);
+    await admin
+      .from("profiles")
+      .update({
+        student_id: id,
+        is_student_verified: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", uid);
+  }
 
   const session = await signInStudentSession(id, password);
   const refreshed = await getStudentAccount(id);
@@ -645,4 +664,81 @@ export function getOrigin(request?: NextRequest): string {
   if (url) return url.replace(/\/$/, "");
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return "http://localhost:3000";
+}
+
+export type BootstrapAdminInput = {
+  studentId: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+};
+
+export async function createBootstrapAdminAccount(input: BootstrapAdminInput): Promise<{
+  studentId: string;
+  uid: string;
+}> {
+  const id = normalizeStudentId(input.studentId);
+  if (!BOOTSTRAP_ADMIN_STUDENT_IDS.has(id)) {
+    throw new Error(`เลขประจำตัว ${id} ไม่ได้อยู่ในรายการแอดมินระบบ`);
+  }
+  if (!isValidStudentId(id)) {
+    throw new Error("เลขประจำตัวไม่ถูกต้อง");
+  }
+  if (!input.password || input.password.length < 7) {
+    throw new Error("รหัสผ่านสั้นเกินไป");
+  }
+
+  const firstName = input.firstName?.trim() || "Admin";
+  const lastName = input.lastName?.trim() || "Found-U";
+  const nickname = input.nickname?.trim() || "Admin";
+  const displayName = `${firstName} ${lastName}`.trim();
+  const passwordHash = hashSecret(input.password);
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+
+  const { error: upsertError } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).upsert(
+    {
+      student_id: id,
+      first_name: firstName,
+      last_name: lastName,
+      nickname,
+      school_password_hash: passwordHash,
+      current_password_hash: passwordHash,
+      must_change_password: false,
+      has_logged_in_once: false,
+      status: "active",
+      updated_at: now,
+      created_at: now,
+    },
+    { onConflict: "student_id" }
+  );
+  if (upsertError) throw upsertError;
+
+  const uid = await ensureAuthUserForStudent(id, displayName, input.password, {
+    verifyPasswordLogin: false,
+  });
+  await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({ linked_uid: uid, updated_at: now })
+    .eq("student_id", id);
+
+  const account = await getStudentAccount(id);
+  if (!account) throw new Error("สร้างบัญชีแอดมินไม่สำเร็จ");
+
+  await syncAppUserFromStudent(uid, { ...account, linkedUid: uid });
+  await promoteAdminUser(uid, studentIdToAuthEmail(id), displayName);
+  await admin
+    .from("profiles")
+    .update({
+      student_id: id,
+      first_name: firstName,
+      last_name: lastName,
+      nickname,
+      is_student_verified: true,
+      updated_at: now,
+    })
+    .eq("id", uid);
+
+  return { studentId: id, uid };
 }

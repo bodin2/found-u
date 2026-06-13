@@ -65,6 +65,10 @@ export interface AppSettings {
   nfcPublicBaseUrl?: string;
   nfcRequireLoginToReport?: boolean;
 
+  /** ปิดการเข้าสู่ระบบจากหน้า Landing (แสดง "พบกันเร็วๆนี้") */
+  comingSoonEnabled?: boolean;
+  comingSoonMessage?: string;
+
   // Other settings
   updatedAt?: Date;
   updatedBy?: string;
@@ -110,6 +114,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   compressionQuality: 0.8,
   nfcEnabled: true,
   nfcRequireLoginToReport: true,
+  comingSoonEnabled: true,
+  comingSoonMessage: "พบกันเร็วๆนี้",
 };
 
 // AI Rate Limit Usage Record

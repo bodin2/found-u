@@ -4,6 +4,7 @@ import {
   pinSchema,
   schoolPasswordSchema,
   studentIdSchema,
+  trimString,
 } from "@/lib/validations/primitives";
 
 const passkeyResponseSchema = z.object({
@@ -13,9 +14,14 @@ const passkeyResponseSchema = z.object({
   response: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const loginPasswordSchema = trimString
+  .min(7, "รหัสผ่านสั้นเกินไป")
+  .max(32, "รหัสผ่านยาวเกินไป")
+  .regex(/^[A-Za-z0-9]+$/, "รหัสผ่านต้องเป็น a-z, A-Z, 0-9");
+
 export const loginWithPasswordSchema = z.object({
   studentId: studentIdSchema,
-  password: schoolPasswordSchema,
+  password: loginPasswordSchema,
 });
 
 export const loginWithPinSchema = z.object({

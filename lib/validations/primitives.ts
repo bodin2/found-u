@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const trimString = z.string().trim();
 
+export { trimString };
+
 export const studentIdSchema = trimString
   .regex(/^\d{5}$/, "เลขประจำตัวนักเรียนต้องเป็นตัวเลข 5 หลัก");
 
