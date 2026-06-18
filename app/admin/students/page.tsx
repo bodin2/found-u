@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   UserPlus,
+  RotateCcw,
 } from "lucide-react";
 import type { StudentImportSummary } from "@/lib/types";
 
@@ -25,6 +26,8 @@ interface WhitelistEntry {
 interface Stats {
   totalStudents: number;
   loggedInCount: number;
+  registeredCount: number;
+  pendingRegistrationCount: number;
   disabledCount: number;
   whitelist: WhitelistEntry[];
 }
@@ -35,7 +38,15 @@ export default function AdminStudentsPage() {
   const [loading, setLoading] = useState(true);
   const [csvContent, setCsvContent] = useState("");
   const [preview, setPreview] = useState<
-    { studentId: string; firstName: string; lastName: string; nickname: string }[]
+    {
+      studentId: string;
+      firstName: string;
+      lastName: string;
+      nickname: string;
+      gradeLevel?: string;
+      roomNumber?: string;
+      format?: string;
+    }[]
   >([]);
   const [parseErrors, setParseErrors] = useState<{ line: number; message: string }[]>([]);
   const [importing, setImporting] = useState(false);
@@ -51,6 +62,8 @@ export default function AdminStudentsPage() {
   const [newRole, setNewRole] = useState<"user" | "admin">("user");
   const [creating, setCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [resetStudentId, setResetStudentId] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   const getToken = useCallback(async () => {
     if (!user) throw new Error("Not authenticated");
@@ -139,7 +152,8 @@ export default function AdminStudentsPage() {
   };
 
   const isValidNewStudentId = /^\d{5}$/.test(newStudentId.replace(/\D/g, "").padStart(5, "0").slice(-5));
-  const isValidNewPassword = /^[a-zA-Z0-9]{7,8}$/.test(newPassword);
+  const isValidNewPassword =
+    newPassword.length === 0 || /^[a-zA-Z0-9]{7,8}$/.test(newPassword);
   const canCreateStudent =
     newStudentId.replace(/\D/g, "").length >= 1 &&
     isValidNewStudentId &&
@@ -162,7 +176,7 @@ export default function AdminStudentsPage() {
         },
         body: JSON.stringify({
           studentId: newStudentId,
-          password: newPassword,
+          password: newPassword || undefined,
           firstName: newFirstName.trim(),
           role: newRole,
         }),
@@ -212,6 +226,32 @@ export default function AdminStudentsPage() {
     }
   };
 
+  const handleResetStudent = async () => {
+    if (!user || resetStudentId.replace(/\D/g, "").length < 1) return;
+    if (!confirm(`รีเซ็ตบัญชี ${resetStudentId} เพื่อให้สมัครใหม่ได้?`)) return;
+    setResetting(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/students/reset-account", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ studentId: resetStudentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "รีเซ็ตไม่สำเร็จ");
+      setResetStudentId("");
+      await loadStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "รีเซ็ตไม่สำเร็จ");
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const removeWhitelist = async (email: string) => {
     if (!user) return;
     setWhitelistLoading(true);
@@ -254,9 +294,10 @@ export default function AdminStudentsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatCard label="นักเรียนในระบบ" value={stats?.totalStudents ?? 0} />
-        <StatCard label="เคยเข้าสู่ระบบแล้ว" value={stats?.loggedInCount ?? 0} />
+        <StatCard label="สมัครแล้ว" value={stats?.registeredCount ?? 0} />
+        <StatCard label="รอสมัคร" value={stats?.pendingRegistrationCount ?? 0} />
         <StatCard label="ปิดใช้งาน" value={stats?.disabledCount ?? 0} />
       </div>
 
@@ -266,7 +307,7 @@ export default function AdminStudentsPage() {
           สร้างผู้ใช้ใหม่
         </h2>
         <p className="text-sm text-gray-500 mb-4">
-          กรอกข้อมูลขั้นต่ำเหมือน CSV — ชื่อเล่นและข้อมูลอื่นๆ ผู้ใช้ตั้งเองหลังเข้าสู่ระบบ
+          กรอกเลขประจำตัวและชื่อ — ปล่อยรหัสผ่านว่างเพื่อให้นักเรียนสมัครเองผ่านหน้าเริ่มใช้งาน
         </p>
 
         <form onSubmit={handleCreateStudent} className="space-y-4">
@@ -288,18 +329,17 @@ export default function AdminStudentsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                รหัสผ่าน <span className="text-red-500">*</span>
+                รหัสผ่าน (ไม่บังคับ)
               </label>
               <input
                 type="text"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8))}
-                placeholder="abc1234"
+                placeholder="ว่าง = รอสมัคร"
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 font-mono"
-                required
                 autoComplete="off"
               />
-              <p className="text-xs text-gray-500 mt-1">a-z A-Z 0-9 ความยาว 7-8 ตัว</p>
+              <p className="text-xs text-gray-500 mt-1">ถ้ากรอก: a-z A-Z 0-9 ความยาว 7-8 ตัว (แบบ legacy)</p>
             </div>
           </div>
 
@@ -355,12 +395,20 @@ export default function AdminStudentsPage() {
           <FileSpreadsheet className="w-5 h-5" />
           นำเข้า CSV นักเรียน
         </h2>
-        <p className="text-sm text-gray-500 mb-4">
-          รูปแบบ:{" "}
-          <code className="bg-gray-100 dark:bg-gray-900 px-2 py-0.5 rounded">
-            เลขประจำตัว:รหัสผ่าน:ชื่อ:นามสกุล:ชื่อเล่น
-          </code>
+        <p className="text-sm text-gray-500 mb-2">
+          รองรับหลายรูปแบบ (คั่นด้วย <code>:</code> ไม่ใช่ comma) — บันทึกจาก Excel เป็น .csv หรือ .txt
         </p>
+        <ul className="text-xs text-gray-500 mb-4 space-y-1 list-disc list-inside">
+          <li>
+            <code>เลขประจำตัว:ระดับชั้น/ห้อง:ชื่อ:นามสกุล</code>
+          </li>
+          <li>
+            <code>เลขประจำตัว:ชื่อ:นามสกุล</code> หรือ <code>เลขประจำตัว:ชื่อนามสกุล</code>
+          </li>
+          <li>
+            Legacy: <code>เลขประจำตัว:รหัสผ่าน:ชื่อ:นามสกุล:ชื่อเล่น</code>
+          </li>
+        </ul>
 
         <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
           <Upload className="w-8 h-8 text-gray-400 mb-2" />
@@ -380,7 +428,9 @@ export default function AdminStudentsPage() {
                     <th className="text-left p-2">เลข 5 หลัก</th>
                     <th className="text-left p-2">ชื่อ</th>
                     <th className="text-left p-2">นามสกุล</th>
-                    <th className="text-left p-2">ชื่อเล่น</th>
+                    <th className="text-left p-2">ชั้น</th>
+                    <th className="text-left p-2">ห้อง</th>
+                    <th className="text-left p-2">รูปแบบ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -389,7 +439,9 @@ export default function AdminStudentsPage() {
                       <td className="p-2 font-mono">{row.studentId}</td>
                       <td className="p-2">{row.firstName}</td>
                       <td className="p-2">{row.lastName}</td>
-                      <td className="p-2">{row.nickname}</td>
+                      <td className="p-2">{row.gradeLevel || "—"}</td>
+                      <td className="p-2">{row.roomNumber || "—"}</td>
+                      <td className="p-2 text-xs">{row.format === "legacy" ? "legacy" : "รายชื่อ"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -430,6 +482,36 @@ export default function AdminStudentsPage() {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+          <RotateCcw className="w-5 h-5" />
+          รีเซ็ตบัญชีนักเรียน
+        </h2>
+        <p className="text-sm text-gray-500 mb-4">
+          ใช้เมื่อนักเรียนลืมทั้งรหัสผ่านและ PIN — รีเซ็ตแล้วให้สมัครใหม่ผ่านหน้าเริ่มใช้งาน
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={5}
+            value={resetStudentId}
+            onChange={(e) => setResetStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            placeholder="เลขประจำตัว 5 หลัก"
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 font-mono tracking-widest"
+          />
+          <button
+            type="button"
+            onClick={handleResetStudent}
+            disabled={resetting || resetStudentId.length !== 5}
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-600 text-white rounded-xl font-medium disabled:opacity-50"
+          >
+            {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            รีเซ็ตบัญชี
+          </button>
+        </div>
       </section>
 
       <section className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">

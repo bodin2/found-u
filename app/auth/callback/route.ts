@@ -4,6 +4,7 @@ import {
   checkAuthEligibility,
   revokeIneligibleOAuthUser,
 } from "@/lib/auth-eligibility";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 function safeNextPath(next: string | null): string {
   if (!next || !next.startsWith("/") || next.startsWith("//")) {
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   if (!code) {
     const message = searchParams.get("error_description") || searchParams.get("error") || "auth";
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(message)}`);
+    return NextResponse.redirect(`${origin}${AUTH_ROUTES.login}?error=${encodeURIComponent(message)}`);
   }
 
   const supabase = await createClient();
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
 
   if (error || !data.user) {
     console.error("OAuth callback error:", error);
-    return NextResponse.redirect(`${origin}/login?error=auth`);
+    return NextResponse.redirect(`${origin}${AUTH_ROUTES.login}?error=auth`);
   }
 
   if (!link) {
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
       await revokeIneligibleOAuthUser(data.user.id, data.user.email);
       await supabase.auth.signOut();
       return NextResponse.redirect(
-        `${origin}/login?error=${encodeURIComponent(eligibility.message)}`
+        `${origin}${AUTH_ROUTES.login}?error=${encodeURIComponent(eligibility.message)}`
       );
     }
   }

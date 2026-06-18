@@ -16,7 +16,7 @@ type ComingSoonCtaProps = {
 export function ComingSoonCta({
   comingSoon,
   message = "พบกันเร็วๆนี้",
-  href = "/login",
+  href = "/auth",
   label,
   className,
   showArrow = false,

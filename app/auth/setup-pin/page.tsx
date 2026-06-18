@@ -6,6 +6,7 @@ import { Loader2, Shield } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { postSetupPin } from "@/lib/student-auth-api";
 import { setRememberedDevice } from "@/lib/auth-device-memory";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function SetupPinPage() {
   return (
@@ -32,7 +33,7 @@ function SetupPinContent() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
+    if (!loading && !user) router.replace(AUTH_ROUTES.login);
     if (!loading && user && isAdmin) router.replace("/home");
     if (!loading && sessionReady && user && !mustSetupPin && !isReset) {
       router.replace("/home");

@@ -32,6 +32,9 @@ export interface Database {
           passkey_credentials: Json | null;
           status: "active" | "disabled";
           import_batch_id: string | null;
+          grade_level: string | null;
+          room_number: string | null;
+          is_registered: boolean;
           created_at: string;
           updated_at: string;
         };

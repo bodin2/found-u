@@ -1,5 +1,8 @@
 import { getSessionToken, signInWithStudentSession } from "@/lib/auth";
 import type { AppUser } from "@/lib/types";
+import { resolvePostLoginPath } from "@/lib/auth-routes";
+
+export { resolvePostLoginPath };
 
 type SessionPayload = {
   access_token: string;
@@ -46,22 +49,49 @@ async function handleSessionResponse(res: Response, fallbackMessage: string): Pr
   };
 }
 
-export function resolvePostLoginPath(payload: {
-  mustChangePassword?: boolean;
-  mustSetupPin?: boolean;
-}): string {
-  if (payload.mustChangePassword) return "/login/change-password";
-  if (payload.mustSetupPin) return "/login/setup-pin";
-  return "/home";
-}
-
 export async function postStudentLogin(studentId: string, password: string) {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ studentId, password }),
   });
-  return handleSessionResponse(res, "เข้าสู่ระบบไม่สำเร็จ");
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data.error || "เข้าสู่ระบบไม่สำเร็จ";
+    const err = new Error(message) as Error & { needsRegistration?: boolean };
+    err.needsRegistration = Boolean(data.needsRegistration);
+    throw err;
+  }
+
+  const accessToken = data.access_token as string | undefined;
+  const refreshToken = data.refresh_token as string | undefined;
+  if (!accessToken || !refreshToken) {
+    throw new Error("เซิร์ฟเวอร์ไม่ได้ส่งข้อมูล session");
+  }
+
+  const { error } = await signInWithStudentSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  if (error) throw error;
+
+  if (data.studentId) {
+    const { setRememberedDevice } = await import("@/lib/auth-device-memory");
+    setRememberedDevice({
+      studentId: data.studentId as string,
+      nickname: data.nickname as string | undefined,
+    });
+  }
+
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    mustChangePassword: Boolean(data.mustChangePassword),
+    mustSetupPin: Boolean(data.mustSetupPin),
+    studentId: data.studentId as string | undefined,
+    nickname: data.nickname as string | undefined,
+    uid: data.uid as string | undefined,
+  };
 }
 
 export async function postPinLogin(studentId: string, pin: string) {
@@ -71,6 +101,64 @@ export async function postPinLogin(studentId: string, pin: string) {
     body: JSON.stringify({ studentId, pin }),
   });
   return handleSessionResponse(res, "เข้าสู่ระบบไม่สำเร็จ");
+}
+
+export async function postResetPasswordWithPin(studentId: string, pin: string, newPassword: string) {
+  const res = await fetch("/api/auth/reset-password-with-pin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ studentId, pin, newPassword }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "รีเซ็ตรหัสผ่านไม่สำเร็จ");
+
+  if (data.access_token && data.refresh_token) {
+    const { error } = await signInWithStudentSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (error) throw error;
+  }
+
+  return data as {
+    success: boolean;
+    access_token?: string;
+    refresh_token?: string;
+    mustChangePassword?: boolean;
+  };
+}
+
+export async function lookupRegistration(studentId: string) {
+  const res = await fetch(`/api/auth/register/lookup?studentId=${encodeURIComponent(studentId)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "ค้นหาข้อมูลไม่สำเร็จ");
+  return data as {
+    found: boolean;
+    canRegister?: boolean;
+    alreadyRegistered?: boolean;
+    message?: string;
+    studentId?: string;
+    firstName?: string;
+    lastName?: string;
+    gradeLevel?: string | null;
+    roomNumber?: string | null;
+    registrationToken?: string;
+  };
+}
+
+export async function completeRegistration(input: {
+  studentId: string;
+  registrationToken: string;
+  password: string;
+  pin: string;
+}) {
+  const res = await fetch("/api/auth/register/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return handleSessionResponse(res, "สมัครสมาชิกไม่สำเร็จ");
 }
 
 export async function postResetPassword(studentId: string, schoolPassword: string, newPassword: string) {

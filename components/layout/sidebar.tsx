@@ -11,6 +11,7 @@ import { menuItems } from "@/lib/menu";
 import { getUserPublicEmail, getUserShownName } from "@/lib/user-display";
 import { UserAvatar } from "@/components/user/user-avatar";
 import { cn } from "@/lib/utils";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -21,7 +22,7 @@ export default function Sidebar() {
 
   const handleSignIn = async () => {
     try {
-      window.location.assign("/login");
+      window.location.assign(AUTH_ROUTES.hub);
     } catch (error) {
       console.error("Error signing in:", error);
     }

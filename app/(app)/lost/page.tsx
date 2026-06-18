@@ -29,6 +29,7 @@ import {
   type ContactTypeConfig,
 } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { useMapView } from "@/hooks/use-map-view";
 import { getMapDisplayPosition } from "@/lib/geolocation";
@@ -122,7 +123,7 @@ export default function ReportLostPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push("/login");
+      router.push(AUTH_ROUTES.hub);
     }
   }, [user, authLoading, router]);
 

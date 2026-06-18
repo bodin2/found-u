@@ -27,6 +27,9 @@ export async function POST(request: NextRequest) {
 
     const account = await getStudentAccount(studentId);
     if (!account) return NextResponse.json({ error: "ไม่พบบัญชีนักเรียน" }, { status: 404 });
+    if (!account.currentPasswordHash) {
+      return NextResponse.json({ error: "บัญชียังไม่ได้ตั้งรหัสผ่าน" }, { status: 400 });
+    }
     if (!verifySecret(parsed.data.password, account.currentPasswordHash)) {
       return NextResponse.json({ error: "รหัสผ่านไม่ถูกต้อง" }, { status: 401 });
     }

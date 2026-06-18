@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { GraduationCap } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 interface StudentRegistrationModalProps {
   open: boolean;
@@ -18,7 +19,7 @@ export function StudentRegistrationModal({ open }: StudentRegistrationModalProps
 
   const goToLogin = () => {
     setLoading(true);
-    router.push("/login");
+    router.push(AUTH_ROUTES.login);
   };
 
   return (

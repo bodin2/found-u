@@ -8,7 +8,6 @@ import {
   Camera,
   Clock,
   Radio,
-  ArrowRight,
   Sparkles,
 } from "lucide-react";
 import { FeaturesMotionCarousel } from "@/components/landing/features-motion-carousel";
@@ -167,7 +166,8 @@ export function LandingPage() {
             <ComingSoonCta
               comingSoon={comingSoon}
               message={comingSoonMessage}
-              label="เข้าสู่ระบบ"
+              href="/auth/register"
+              label="เริ่มใช้งาน"
               className="rounded-full bg-line-green px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-line-green-hover"
             />
           </div>
@@ -242,6 +242,7 @@ export function LandingPage() {
                 <ComingSoonCta
                   comingSoon={comingSoon}
                   message={comingSoonMessage}
+                  href="/auth/register"
                   label="เริ่มใช้งาน"
                   showArrow
                   className="rounded-full bg-line-green px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-line-green/25 transition hover:bg-line-green-hover"
@@ -291,7 +292,7 @@ export function LandingPage() {
             <span className="text-sm font-medium">ใช้งานง่ายๆ สามขั้น</span>
           </div>
           <h2 className="mt-2 text-center text-2xl font-bold text-text-primary md:text-3xl">
-            จากแจ้ง จนถึงได้ของคืน
+            แจ้ง ติดตาม จับคู่
           </h2>
 
           <ol className="mt-10 space-y-6 md:grid md:grid-cols-3 md:gap-6 md:space-y-0">
@@ -322,28 +323,67 @@ export function LandingPage() {
             พร้อมลองใช้แล้วหรือยัง
           </h2>
           <p className="mt-3 text-text-secondary">
-            เข้าสู่ระบบด้วยรหัสนักเรียนของโรงเรียน แล้วเริ่มแจ้งหรือติดตามได้ทันที
+            เริ่มแจ้งหรือติดตามของที่หายและของที่เจอได้ทันที
           </p>
-          <ComingSoonCta
-            comingSoon={comingSoon}
-            message={comingSoonMessage}
-            label="เข้าสู่ระบบ"
-            showArrow
-            className="mt-8 rounded-full bg-line-green px-8 py-3.5 font-semibold text-white transition hover:bg-line-green-hover"
-          />
+          <div className="mt-8 flex justify-center">
+            <ComingSoonCta
+              comingSoon={comingSoon}
+              message={comingSoonMessage}
+              href="/auth/register"
+              label="เริ่มใช้งาน"
+              showArrow
+              className="rounded-full bg-line-green px-8 py-3.5 font-semibold text-white transition hover:bg-line-green-hover"
+            />
+          </div>
         </div>
       </section>
 
-      <footer className="border-t border-border-light bg-bg-secondary px-5 py-8 text-center text-sm text-text-tertiary">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt=""
-            width={32}
-            height={32}
-            className="h-8 w-8 opacity-80"
-          />
-          <p>foundu.forum — ระบบแจ้งของหายและของเจอสำหรับโรงเรียนบดินทรเดชา (สิงห์ สิงหเสนี) ๒ โดย <a href="https://www.instagram.com/foundu.forum" target="_blank" rel="noopener noreferrer" className="text-line-green hover:underline">foundu.forum</a></p>
+      <footer className="border-t border-border-light bg-bg-secondary">
+        <div className="border-b border-border-light px-5 py-8 md:py-10">
+          <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 md:flex-row md:items-center md:justify-between md:gap-10">
+            <div className="flex shrink-0 items-center justify-center gap-5 sm:gap-8">
+              <Image
+                src="/img/logo/nrct.png"
+                alt="สำนักงานการวิจัยแห่งชาติ (NRCT)"
+                width={120}
+                height={120}
+                className="h-16 w-auto object-contain sm:h-20"
+                onClick={() => window.open("https://nrct.go.th", "_blank")}
+              />
+              <Image
+                src="/img/logo/nstda.png"
+                alt="สำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยีแห่งชาติ (NSTDA)"
+                width={160}
+                height={80}
+                className="h-12 w-auto object-contain sm:h-14"
+                onClick={() => window.open("https://www.nstda.or.th", "_blank")} 
+              />
+            </div>
+            <div className="max-w-2xl text-center text-sm leading-relaxed text-text-secondary md:text-right">
+              <p>
+                โครงการ Found-U : ระบบแจ้งของหาย-ของเจอสำหรับโรงเรียนด้วยปัญญาประดิษฐ์
+                และเทคโนโลยี NFC ได้รับทุนอุดหนุนการทำกิจกรรมส่งเสริมและสนับสนุนการวิจัยและนวัตกรรมจากสำนักงานการวิจัยแห่งชาติ
+                และสำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยีแห่งชาติ
+              </p>
+              <p className="mt-3 text-xs leading-relaxed text-text-tertiary italic">
+                This research and innovation activity is funded by National Research Council of
+                Thailand (NRCT) and National Science and Technology Development Agency (NSTDA)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-8 text-center text-sm text-text-tertiary">
+          <div className="mx-auto flex max-w-5xl flex-col items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 opacity-80"
+            />
+            <p>foundu.forum — ระบบแจ้งของหายและของเจอสำหรับโรงเรียนบดินทรเดชา (สิงห์ สิงหเสนี) ๒ โดย <a href="https://www.instagram.com/foundu.forum" target="_blank" rel="noopener noreferrer" className="text-line-green hover:underline">foundu.forum</a></p>
+          </div>
         </div>
       </footer>
     </div>

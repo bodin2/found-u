@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const [studentsSnap, whitelistSnap, linkedSnap, disabledSnap] = await Promise.all([
+  const [studentsSnap, whitelistSnap, linkedSnap, disabledSnap, registeredSnap] = await Promise.all([
     admin.from(STUDENT_ACCOUNTS_COLLECTION).select("*", { count: "exact", head: true }),
     admin.from(ADMIN_WHITELIST_COLLECTION).select("*"),
     admin
@@ -28,11 +28,20 @@ export async function GET(request: NextRequest) {
       .from(STUDENT_ACCOUNTS_COLLECTION)
       .select("*", { count: "exact", head: true })
       .eq("status", "disabled"),
+    admin
+      .from(STUDENT_ACCOUNTS_COLLECTION)
+      .select("*", { count: "exact", head: true })
+      .eq("is_registered", true),
   ]);
 
+  const totalStudents = studentsSnap.count ?? 0;
+  const registeredCount = registeredSnap.count ?? 0;
+
   return NextResponse.json({
-    totalStudents: studentsSnap.count ?? 0,
+    totalStudents,
     loggedInCount: linkedSnap.count ?? 0,
+    registeredCount,
+    pendingRegistrationCount: Math.max(0, totalStudents - registeredCount),
     disabledCount: disabledSnap.count ?? 0,
     whitelist: whitelistSnap.data ?? [],
   });

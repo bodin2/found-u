@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { LogIn, Lock, ArrowRight } from "lucide-react";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 interface LoginPromptProps {
   title?: string;
@@ -47,7 +48,7 @@ export default function LoginPrompt({
       {/* Action Buttons */}
       <div className="w-full max-w-xs space-y-3 mt-4">
         <button
-          onClick={() => router.push("/login")}
+          onClick={() => router.push(AUTH_ROUTES.login)}
           className="w-full py-3.5 bg-[#06C755] text-white rounded-full font-medium hover:bg-[#05b34d] transition-colors flex items-center justify-center gap-2"
         >
           <LogIn className="w-5 h-5" />

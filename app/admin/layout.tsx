@@ -24,6 +24,7 @@ import { adminNavGroups, isAdminNavActive } from "@/lib/admin-nav";
 import { UserAvatar } from "@/components/user/user-avatar";
 import { getUserShownName } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function AdminLayout({
   children,
@@ -42,7 +43,7 @@ export default function AdminLayout({
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push("/login");
+        router.push(AUTH_ROUTES.hub);
       } else if (!isAdmin) {
         router.push("/home");
       }
@@ -51,7 +52,7 @@ export default function AdminLayout({
 
   const handleLogout = async () => {
     await logout();
-    router.push("/login");
+    router.push(AUTH_ROUTES.hub);
   };
 
   // Loading state

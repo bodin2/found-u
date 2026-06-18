@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { slideUp } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { getSessionToken } from "@/lib/auth";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { getUser } from "@/lib/database";
 import {
   ConnectionResultModal,
@@ -101,7 +102,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/login");
+      router.replace(AUTH_ROUTES.hub);
     }
   }, [user, loading, router]);
 
@@ -405,7 +406,7 @@ export default function SettingsPage() {
       {securityError && <p className="text-sm text-red-600">{securityError}</p>}
 
       <Link
-        href="/login/change-password"
+        href={AUTH_ROUTES.changePassword}
         className={cn(
           "flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border-light",
           "hover:bg-bg-secondary transition-colors"

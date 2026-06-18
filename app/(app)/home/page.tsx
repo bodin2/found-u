@@ -12,6 +12,7 @@ import { UserAvatar } from "@/components/user/user-avatar";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/use-mounted";
 import { cn } from "@/lib/utils";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { menuItems } from "@/lib/menu";
 import { DashboardListSkeleton } from "@/components/layout/app-shell-skeleton";
 
@@ -60,7 +61,7 @@ export default function Home() {
 
   const handleSignIn = async () => {
     try {
-      window.location.assign("/login");
+      window.location.assign(AUTH_ROUTES.hub);
     } catch (error) {
       console.error("Error signing in:", error);
     }

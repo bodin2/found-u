@@ -6,19 +6,17 @@ import { useAuth } from "@/contexts/auth-context";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { TutorialSystem } from "@/components/ui/tutorial-system";
 import { StudentRegistrationModal } from "@/components/auth/student-registration-modal";
+import { AUTH_ROUTES, isAuthPublicPath } from "@/lib/auth-routes";
+import { isKnownRoute } from "@/lib/known-routes";
 
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/login/change-password",
-  "/login/setup-pin",
-  "/login/forgot-pin",
-  "/login/reset-password",
-  "/banned",
-];
+const PUBLIC_PATHS = ["/", "/banned"];
 
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/login");
+  return (
+    PUBLIC_PATHS.includes(pathname) ||
+    isAuthPublicPath(pathname) ||
+    !isKnownRoute(pathname)
+  );
 }
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -58,28 +56,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (loading) return;
 
     if (!user && !isPublicPath(pathname)) {
-      router.push("/login");
+      router.push(AUTH_ROUTES.hub);
       return;
     }
 
-    if (user && pathname === "/login") {
+    if (user && (pathname === AUTH_ROUTES.hub || pathname === AUTH_ROUTES.login)) {
       if (mustChangePassword) {
-        router.push("/login/change-password");
+        router.push(AUTH_ROUTES.changePassword);
       } else if (mustSetupPin) {
-        router.push("/login/setup-pin");
+        router.push(AUTH_ROUTES.setupPin);
       } else if (isStudentVerified || isAdmin) {
         router.push("/home");
       }
       return;
     }
 
-    if (user && mustChangePassword && pathname !== "/login/change-password") {
-      router.push("/login/change-password");
+    if (user && mustChangePassword && pathname !== AUTH_ROUTES.changePassword) {
+      router.push(AUTH_ROUTES.changePassword);
       return;
     }
 
-    if (user && mustSetupPin && !isAdmin && pathname !== "/login/setup-pin") {
-      router.push("/login/setup-pin");
+    if (user && mustSetupPin && !isAdmin && pathname !== AUTH_ROUTES.setupPin) {
+      router.push(AUTH_ROUTES.setupPin);
       return;
     }
 
@@ -109,7 +107,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       user &&
       isStudentVerified &&
       !hasSeenTutorial &&
-      !PUBLIC_PATHS.includes(pathname)
+      !isPublicPath(pathname)
     ) {
       setShowTutorial(true);
     }
@@ -131,7 +129,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     !loading &&
     user &&
     mustChangePassword &&
-    pathname !== "/login/change-password"
+    pathname !== AUTH_ROUTES.changePassword
   ) {
     return null;
   }
@@ -141,7 +139,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     user &&
     mustSetupPin &&
     !isAdmin &&
-    pathname !== "/login/setup-pin"
+    pathname !== AUTH_ROUTES.setupPin
   ) {
     return null;
   }

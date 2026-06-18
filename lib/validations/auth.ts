@@ -70,3 +70,20 @@ export const verifyPinSchema = z.object({
   pin: pinSchema,
 });
 
+export const completeRegistrationSchema = z.object({
+  studentId: studentIdSchema,
+  registrationToken: z.string().min(1, "registrationToken ไม่ถูกต้อง"),
+  password: newPasswordSchema,
+  pin: pinSchema,
+});
+
+export const resetPasswordWithPinSchema = z.object({
+  studentId: studentIdSchema,
+  pin: pinSchema,
+  newPassword: newPasswordSchema,
+});
+
+export const adminResetStudentSchema = z.object({
+  studentId: studentIdSchema,
+});
+

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Loader2, KeyRound } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { postChangePassword } from "@/lib/student-auth-api";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function ChangePasswordPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
+    if (!loading && !user) router.replace(AUTH_ROUTES.login);
   }, [user, loading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {

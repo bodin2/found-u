@@ -11,7 +11,7 @@ import { parseJsonBody } from "@/lib/parse-request";
 
 const createStudentBodySchema = z.object({
   studentId: z.string().min(1, "กรุณากรอกเลขประจำตัว"),
-  password: z.string().min(1, "กรุณากรอกรหัสผ่าน"),
+  password: z.string().optional(),
   firstName: z.string().min(1, "กรุณากรอกชื่อ"),
   role: z.enum(["user", "admin"]).default("user"),
 });
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     if (!isValidStudentId(id)) {
       return NextResponse.json({ error: "เลขประจำตัวต้องเป็นตัวเลข 5 หลัก" }, { status: 400 });
     }
-    if (!isValidSchoolPassword(password)) {
+    if (password && !isValidSchoolPassword(password)) {
       return NextResponse.json(
         { error: "รหัสผ่านต้องเป็น a-z A-Z 0-9 ความยาว 7-8 ตัว" },
         { status: 400 }
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     const result = await createStudentAccountManual({
       studentId: id,
-      password,
+      password: password || undefined,
       firstName: firstName.trim(),
       role,
       adminUid: authUser.uid,

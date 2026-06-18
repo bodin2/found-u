@@ -22,6 +22,7 @@ import {
   type ContactTypeConfig,
 } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcTagRegistered } from "@/lib/logger";
 
@@ -69,7 +70,7 @@ export default function NfcRegisterPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push("/login");
+    if (!authLoading && !user) router.push(AUTH_ROUTES.hub);
   }, [user, authLoading, router]);
 
   const handleContactChange = (index: number, field: "type" | "value", value: string) => {

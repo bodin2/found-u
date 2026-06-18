@@ -147,8 +147,11 @@ export interface StudentAccount {
   firstName: string;
   lastName: string;
   nickname: string;
-  schoolPasswordHash: string;
-  currentPasswordHash: string;
+  gradeLevel?: string;
+  roomNumber?: string;
+  isRegistered: boolean;
+  schoolPasswordHash?: string;
+  currentPasswordHash?: string;
   mustChangePassword: boolean;
   hasLoggedInOnce: boolean;
   linkedUid?: string;
@@ -167,6 +170,19 @@ export interface AdminWhitelistEntry {
   note?: string;
 }
 
+export interface ParsedStudentRosterRow {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  gradeLevel?: string;
+  roomNumber?: string;
+  password?: string;
+  format: "legacy" | "roster";
+  lineNumber: number;
+}
+
+/** @deprecated Use ParsedStudentRosterRow */
 export interface ParsedStudentCsvRow {
   studentId: string;
   password: string;

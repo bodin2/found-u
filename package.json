@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "gen:students": "bun run scripts/generate-students-csv.ts",
+    "gen:roster": "bun run scripts/generate-roster-csv.ts",
     "import:students": "bun run scripts/import-students-csv.ts",
     "create:admin": "bun run scripts/create-admin.ts",
-    "test:login": "bun run scripts/test-student-login.ts"
+    "test:login": "bun run scripts/test-student-login.ts",
+    "test": "bun test tests"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.879.0",

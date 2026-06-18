@@ -5,7 +5,7 @@
  */
 
 import { readFileSync } from "fs";
-import { importStudentRows, parseStudentCsvContent } from "../lib/student-auth-server";
+import { importStudentRows, parseStudentRosterContent } from "../lib/student-auth-server";
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -20,7 +20,7 @@ function parseArgs() {
 
 const { file, dryRun } = parseArgs();
 const content = readFileSync(file, "utf8");
-const { rows, errors } = parseStudentCsvContent(content);
+const { rows, errors } = parseStudentRosterContent(content);
 
 console.log(`Parsed ${rows.length} rows, ${errors.length} parse errors`);
 if (errors.length) console.log(errors);

@@ -10,6 +10,16 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: "/login", destination: "/auth/login", permanent: true },
+      { source: "/login/register", destination: "/auth/register", permanent: true },
+      { source: "/login/forgot-pin", destination: "/auth/login/forgot-pin", permanent: true },
+      { source: "/login/reset-password", destination: "/auth/login/reset-password", permanent: true },
+      { source: "/login/change-password", destination: "/auth/change-password", permanent: true },
+      { source: "/login/setup-pin", destination: "/auth/setup-pin", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

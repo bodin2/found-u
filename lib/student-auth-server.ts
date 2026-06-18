@@ -6,6 +6,7 @@ import { checkStudentIdEligibleForSecondaryAuth } from "@/lib/auth-eligibility";
 import type {
   AppUser,
   ParsedStudentCsvRow,
+  ParsedStudentRosterRow,
   StudentAccount,
   StudentImportSummary,
 } from "@/lib/types";
@@ -88,51 +89,182 @@ export function checkRateLimit(key: string): { allowed: boolean; retryAfterMs?: 
   return { allowed: true };
 }
 
-export function parseStudentCsvContent(content: string): {
-  rows: ParsedStudentCsvRow[];
+function formatImportError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    const message = String((err as { message: unknown }).message);
+    const code = "code" in err ? String((err as { code: unknown }).code) : "";
+    return code ? `${message} (${code})` : message;
+  }
+  return "เกิดข้อผิดพลาด";
+}
+
+async function ensureRosterPlaceholderAuthUser(
+  studentId: string,
+  displayName: string
+): Promise<string> {
+  const placeholderPassword = randomBytes(24).toString("hex");
+  return ensureAuthUserForStudent(studentId, displayName, placeholderPassword, {
+    verifyPasswordLogin: false,
+  });
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  const lastSpace = trimmed.lastIndexOf(" ");
+  if (lastSpace > 0) {
+    return {
+      firstName: trimmed.slice(0, lastSpace).trim(),
+      lastName: trimmed.slice(lastSpace + 1).trim(),
+    };
+  }
+  return { firstName: trimmed, lastName: "" };
+}
+
+function isClassOrRoomField(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  if (/^[มปด]\./.test(v)) return true;
+  if (/^\d{1,2}$/.test(v)) return true;
+  if (/^[มปด]\.\d+\/\d+$/.test(v)) return true;
+  return false;
+}
+
+function parseClassField(value: string): { gradeLevel?: string; roomNumber?: string } {
+  const v = value.trim();
+  if (!v) return {};
+
+  const compound = v.match(/^([มปด]\.\d+)\/(\d+)$/);
+  if (compound) {
+    return { gradeLevel: compound[1], roomNumber: compound[2] };
+  }
+  if (/^[มปด]\./.test(v)) {
+    return { gradeLevel: v };
+  }
+  if (/^\d{1,2}$/.test(v)) {
+    return { roomNumber: v };
+  }
+  return { gradeLevel: v };
+}
+
+export function parseStudentRosterContent(content: string): {
+  rows: ParsedStudentRosterRow[];
   errors: { line: number; message: string }[];
 } {
   const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const rows: ParsedStudentCsvRow[] = [];
+  const rows: ParsedStudentRosterRow[] = [];
   const errors: { line: number; message: string }[] = [];
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
     if (line.startsWith("#") || line.toLowerCase().startsWith("studentid")) return;
 
-    const parts = line.split(":");
-    if (parts.length < 5) {
-      errors.push({ line: lineNumber, message: "รูปแบบไม่ถูกต้อง ต้องเป็น เลขประจำตัว:รหัสผ่าน:ชื่อ:นามสกุล:ชื่อเล่น" });
+    const parts = line.split(":").map((p) => p.trim());
+    if (parts.length < 2) {
+      errors.push({ line: lineNumber, message: "รูปแบบไม่ถูกต้อง ต้องมีอย่างน้อย เลขประจำตัว:ชื่อ" });
       return;
     }
 
-    const [rawId, password, firstName, lastName, nickname] = parts;
+    const rawId = parts[0];
     const studentId = normalizeStudentId(rawId);
-
     if (!isValidStudentId(studentId)) {
       errors.push({ line: lineNumber, message: `เลขประจำตัวไม่ถูกต้อง: ${rawId}` });
       return;
     }
-    if (!isValidSchoolPassword(password)) {
-      errors.push({ line: lineNumber, message: `รหัสผ่านต้องเป็น a-z A-Z 0-9 ความยาว 7-8 ตัว (แถว ${studentId})` });
+
+    // Legacy: id:password:first:last:nickname
+    if (parts.length >= 5 && isValidSchoolPassword(parts[1])) {
+      const [, password, firstName, lastName, nickname] = parts;
+      if (!firstName?.trim() || !lastName?.trim()) {
+        errors.push({ line: lineNumber, message: "ต้องมีชื่อและนามสกุล" });
+        return;
+      }
+      rows.push({
+        studentId,
+        password,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        nickname: (nickname ?? "").trim() || firstName.trim(),
+        format: "legacy",
+        lineNumber,
+      });
       return;
     }
-    if (!firstName?.trim() || !lastName?.trim()) {
-      errors.push({ line: lineNumber, message: "ต้องมีชื่อและนามสกุล" });
+
+    let firstName = "";
+    let lastName = "";
+    let gradeLevel: string | undefined;
+    let roomNumber: string | undefined;
+
+    if (parts.length === 4) {
+      const classFields = parseClassField(parts[1]);
+      gradeLevel = classFields.gradeLevel;
+      roomNumber = classFields.roomNumber;
+      firstName = parts[2];
+      lastName = parts[3];
+    } else if (parts.length === 3) {
+      if (isClassOrRoomField(parts[1])) {
+        const classFields = parseClassField(parts[1]);
+        gradeLevel = classFields.gradeLevel;
+        roomNumber = classFields.roomNumber;
+        const names = splitFullName(parts[2]);
+        firstName = names.firstName;
+        lastName = names.lastName;
+      } else {
+        firstName = parts[1];
+        lastName = parts[2];
+      }
+    } else if (parts.length === 2) {
+      const names = splitFullName(parts[1]);
+      firstName = names.firstName;
+      lastName = names.lastName;
+    } else {
+      errors.push({
+        line: lineNumber,
+        message: "รูปแบบไม่ถูกต้อง รองรับ 2-4 คอลัมน์ (หรือ 5 คอลัมน์แบบ legacy พร้อมรหัสผ่าน)",
+      });
+      return;
+    }
+
+    if (!firstName?.trim()) {
+      errors.push({ line: lineNumber, message: "ต้องมีชื่อ" });
       return;
     }
 
     rows.push({
       studentId,
-      password,
       firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      nickname: (nickname ?? "").trim() || firstName.trim(),
+      lastName: (lastName ?? "").trim(),
+      nickname: firstName.trim(),
+      gradeLevel,
+      roomNumber,
+      format: "roster",
       lineNumber,
     });
   });
 
   return { rows, errors };
+}
+
+export function parseStudentCsvContent(content: string): {
+  rows: ParsedStudentCsvRow[];
+  errors: { line: number; message: string }[];
+} {
+  const { rows, errors } = parseStudentRosterContent(content);
+  const legacyRows: ParsedStudentCsvRow[] = rows
+    .filter((row): row is ParsedStudentRosterRow & { password: string } =>
+      row.format === "legacy" && !!row.password
+    )
+    .map((row) => ({
+      studentId: row.studentId,
+      password: row.password,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      nickname: row.nickname,
+      lineNumber: row.lineNumber,
+    }));
+
+  return { rows: legacyRows, errors };
 }
 
 export async function getStudentIdByPasskeyCredential(credentialId: string): Promise<string | null> {
@@ -209,8 +341,11 @@ export async function getStudentAccount(studentId: string): Promise<StudentAccou
     firstName: row.first_name ?? row.firstName,
     lastName: row.last_name ?? row.lastName,
     nickname: row.nickname,
-    schoolPasswordHash: row.school_password_hash ?? row.schoolPasswordHash,
-    currentPasswordHash: row.current_password_hash ?? row.currentPasswordHash,
+    gradeLevel: row.grade_level ?? row.gradeLevel ?? undefined,
+    roomNumber: row.room_number ?? row.roomNumber ?? undefined,
+    isRegistered: (row.is_registered ?? row.isRegistered) === true,
+    schoolPasswordHash: row.school_password_hash ?? row.schoolPasswordHash ?? undefined,
+    currentPasswordHash: row.current_password_hash ?? row.currentPasswordHash ?? undefined,
     mustChangePassword: (row.must_change_password ?? row.mustChangePassword) ?? false,
     hasLoggedInOnce: (row.has_logged_in_once ?? row.hasLoggedInOnce) ?? false,
     linkedUid: row.linked_uid ?? row.linkedUid ?? undefined,
@@ -476,13 +611,35 @@ export async function promoteAdminUser(
 export async function verifyStudentPassword(
   studentId: string,
   password: string
+): Promise<
+  | { ok: true; account: StudentAccount }
+  | { ok: false; error: string; needsRegistration?: boolean }
+> {
+  const account = await getStudentAccount(studentId);
+  if (!account) return { ok: false, error: "ไม่พบเลขประจำตัวในระบบ" };
+  if (account.status === "disabled") return { ok: false, error: "บัญชีนี้ถูกปิดใช้งาน" };
+  if (!account.currentPasswordHash) {
+    return {
+      ok: false,
+      error: "ยังไม่ได้สมัครสมาชิก กรุณากดเริ่มใช้งานเพื่อสมัคร",
+      needsRegistration: true,
+    };
+  }
+  if (!verifySecret(password, account.currentPasswordHash)) {
+    return { ok: false, error: "รหัสผ่านไม่ถูกต้อง" };
+  }
+  return { ok: true, account };
+}
+
+export async function verifyStudentPin(
+  studentId: string,
+  pin: string
 ): Promise<{ ok: true; account: StudentAccount } | { ok: false; error: string }> {
   const account = await getStudentAccount(studentId);
   if (!account) return { ok: false, error: "ไม่พบเลขประจำตัวในระบบ" };
   if (account.status === "disabled") return { ok: false, error: "บัญชีนี้ถูกปิดใช้งาน" };
-  if (!verifySecret(password, account.currentPasswordHash)) {
-    return { ok: false, error: "รหัสผ่านไม่ถูกต้อง" };
-  }
+  if (!account.pinHash) return { ok: false, error: "ยังไม่ได้ตั้ง PIN" };
+  if (!verifySecret(pin, account.pinHash)) return { ok: false, error: "PIN ไม่ถูกต้อง" };
   return { ok: true, account };
 }
 
@@ -492,6 +649,9 @@ export async function verifySchoolPassword(
 ): Promise<{ ok: true; account: StudentAccount } | { ok: false; error: string }> {
   const account = await getStudentAccount(studentId);
   if (!account) return { ok: false, error: "ไม่พบเลขประจำตัวในระบบ" };
+  if (!account.schoolPasswordHash) {
+    return { ok: false, error: "บัญชีนี้ไม่มีรหัสผ่านจากโรงเรียน กรุณาใช้ PIN แทน" };
+  }
   if (!verifySecret(schoolPassword, account.schoolPasswordHash)) {
     return { ok: false, error: "รหัสผ่านโรงเรียนไม่ถูกต้อง" };
   }
@@ -516,7 +676,7 @@ export async function loginStudentWithPassword(
       studentId: string;
       nickname: string;
     }
-  | { ok: false; error: string; retryAfterMs?: number }
+  | { ok: false; error: string; retryAfterMs?: number; needsRegistration?: boolean }
 > {
   const id = normalizeStudentId(studentId);
   const rate = checkRateLimit(`login:${id}`);
@@ -529,7 +689,13 @@ export async function loginStudentWithPassword(
   }
 
   const verified = await verifyStudentPassword(id, password);
-  if (!verified.ok) return { ok: false, error: verified.error };
+  if (!verified.ok) {
+    return {
+      ok: false,
+      error: verified.error,
+      needsRegistration: verified.needsRegistration,
+    };
+  }
 
   const { account } = verified;
   const displayName = `${account.firstName} ${account.lastName}`;
@@ -553,6 +719,7 @@ export async function loginStudentWithPassword(
     .update({
       linked_uid: uid,
       has_logged_in_once: true,
+      is_registered: true,
       updated_at: new Date().toISOString(),
     })
     .eq("student_id", id);
@@ -656,7 +823,7 @@ export async function loginStudentWithPin(
 }
 
 export async function importStudentRows(
-  rows: ParsedStudentCsvRow[],
+  rows: ParsedStudentRosterRow[],
   importBatchId: string,
   adminUid: string
 ): Promise<StudentImportSummary> {
@@ -670,11 +837,82 @@ export async function importStudentRows(
         .select("*")
         .eq("student_id", row.studentId)
         .maybeSingle();
-      const displayName = `${row.firstName} ${row.lastName}`;
+      const displayName = `${row.firstName} ${row.lastName}`.trim();
 
+      if (row.format === "legacy" && row.password) {
+        if (!existing) {
+          const schoolHash = hashSecret(row.password);
+          const uid = await ensureAuthUserForStudent(row.studentId, displayName, row.password);
+          const { error } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).insert({
+            id: uid,
+            student_id: row.studentId,
+            linked_uid: uid,
+            email: studentIdToAuthEmail(row.studentId),
+            display_name: displayName,
+            first_name: row.firstName,
+            last_name: row.lastName,
+            nickname: row.nickname,
+            grade_level: row.gradeLevel ?? null,
+            room_number: row.roomNumber ?? null,
+            school_password_hash: schoolHash,
+            current_password_hash: schoolHash,
+            must_change_password: false,
+            has_logged_in_once: false,
+            is_registered: false,
+            status: "active",
+            import_batch_id: importBatchId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          if (error) throw error;
+          summary.created += 1;
+          continue;
+        }
+
+        const isRegistered = existing.is_registered === true || existing.has_logged_in_once === true;
+
+        if (isRegistered) {
+          const { error } = await admin
+            .from(STUDENT_ACCOUNTS_COLLECTION)
+            .update({
+              first_name: row.firstName,
+              last_name: row.lastName,
+              nickname: row.nickname,
+              grade_level: row.gradeLevel ?? existing.grade_level,
+              room_number: row.roomNumber ?? existing.room_number,
+              import_batch_id: importBatchId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("student_id", row.studentId);
+          if (error) throw error;
+          summary.updated += 1;
+        } else {
+          const schoolHash = hashSecret(row.password);
+          const { error } = await admin
+            .from(STUDENT_ACCOUNTS_COLLECTION)
+            .update({
+              first_name: row.firstName,
+              last_name: row.lastName,
+              nickname: row.nickname,
+              grade_level: row.gradeLevel ?? existing.grade_level,
+              room_number: row.roomNumber ?? existing.room_number,
+              school_password_hash: schoolHash,
+              current_password_hash: schoolHash,
+              must_change_password: false,
+              import_batch_id: importBatchId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("student_id", row.studentId);
+          if (error) throw error;
+          await ensureAuthUserForStudent(row.studentId, displayName, row.password);
+          summary.updated += 1;
+        }
+        continue;
+      }
+
+      // Roster format (no password) — student self-registers later
       if (!existing) {
-        const schoolHash = hashSecret(row.password);
-        const uid = await ensureAuthUserForStudent(row.studentId, displayName, row.password);
+        const uid = await ensureRosterPlaceholderAuthUser(row.studentId, displayName);
         const { error } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).insert({
           id: uid,
           student_id: row.studentId,
@@ -684,12 +922,17 @@ export async function importStudentRows(
           first_name: row.firstName,
           last_name: row.lastName,
           nickname: row.nickname,
-          school_password_hash: schoolHash,
-          current_password_hash: schoolHash,
+          grade_level: row.gradeLevel ?? null,
+          room_number: row.roomNumber ?? null,
           must_change_password: false,
           has_logged_in_once: false,
+          is_registered: false,
           status: "active",
           import_batch_id: importBatchId,
+          role: "user",
+          ban_status: "none",
+          is_student_verified: false,
+          has_seen_tutorial: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -698,15 +941,17 @@ export async function importStudentRows(
         continue;
       }
 
-      const hasLoggedInOnce = existing.has_logged_in_once === true;
+      const isRegistered = existing.is_registered === true;
 
-      if (hasLoggedInOnce) {
+      if (isRegistered) {
         const { error } = await admin
           .from(STUDENT_ACCOUNTS_COLLECTION)
           .update({
             first_name: row.firstName,
             last_name: row.lastName,
             nickname: row.nickname,
+            grade_level: row.gradeLevel ?? existing.grade_level,
+            room_number: row.roomNumber ?? existing.room_number,
             import_batch_id: importBatchId,
             updated_at: new Date().toISOString(),
           })
@@ -714,28 +959,25 @@ export async function importStudentRows(
         if (error) throw error;
         summary.updated += 1;
       } else {
-        const schoolHash = hashSecret(row.password);
         const { error } = await admin
           .from(STUDENT_ACCOUNTS_COLLECTION)
           .update({
             first_name: row.firstName,
             last_name: row.lastName,
             nickname: row.nickname,
-            school_password_hash: schoolHash,
-            current_password_hash: schoolHash,
-            must_change_password: false,
+            grade_level: row.gradeLevel ?? existing.grade_level,
+            room_number: row.roomNumber ?? existing.room_number,
             import_batch_id: importBatchId,
             updated_at: new Date().toISOString(),
           })
           .eq("student_id", row.studentId);
         if (error) throw error;
-        await ensureAuthUserForStudent(row.studentId, displayName, row.password);
         summary.updated += 1;
       }
     } catch (err) {
       summary.errors.push({
         line: row.lineNumber,
-        message: err instanceof Error ? err.message : "เกิดข้อผิดพลาด",
+        message: formatImportError(err),
       });
     }
   }
@@ -746,7 +988,7 @@ export async function importStudentRows(
 
 export async function createStudentAccountManual(input: {
   studentId: string;
-  password: string;
+  password?: string;
   firstName: string;
   role: "user" | "admin";
   adminUid: string;
@@ -757,7 +999,7 @@ export async function createStudentAccountManual(input: {
   if (!isValidStudentId(id)) {
     throw new Error("เลขประจำตัวต้องเป็นตัวเลข 5 หลัก");
   }
-  if (!isValidSchoolPassword(input.password)) {
+  if (input.password && !isValidSchoolPassword(input.password)) {
     throw new Error("รหัสผ่านต้องเป็น a-z A-Z 0-9 ความยาว 7-8 ตัว");
   }
   if (!firstName) {
@@ -778,9 +1020,38 @@ export async function createStudentAccountManual(input: {
   const lastName = "-";
   const nickname = firstName;
   const displayName = firstName;
-  const schoolHash = hashSecret(input.password);
   const importBatchId = `manual_${Date.now()}`;
+  const now = new Date().toISOString();
 
+  if (!input.password) {
+    const uid = await ensureRosterPlaceholderAuthUser(id, displayName);
+    const { error: insertError } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).insert({
+      id: uid,
+      student_id: id,
+      linked_uid: uid,
+      email: studentIdToAuthEmail(id),
+      display_name: displayName,
+      first_name: firstName,
+      last_name: lastName,
+      nickname,
+      must_change_password: false,
+      has_logged_in_once: false,
+      is_registered: false,
+      status: "active",
+      import_batch_id: importBatchId,
+      role: input.role,
+      ban_status: "none",
+      is_student_verified: false,
+      has_seen_tutorial: false,
+      created_at: now,
+      updated_at: now,
+    });
+    if (insertError) throw insertError;
+    void input.adminUid;
+    return { studentId: id, uid };
+  }
+
+  const schoolHash = hashSecret(input.password);
   const uid = await ensureAuthUserForStudent(id, displayName, input.password);
 
   const { error: insertError } = await admin.from(STUDENT_ACCOUNTS_COLLECTION).insert({
@@ -796,10 +1067,11 @@ export async function createStudentAccountManual(input: {
     current_password_hash: schoolHash,
     must_change_password: false,
     has_logged_in_once: false,
+    is_registered: false,
     status: "active",
     import_batch_id: importBatchId,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   });
   if (insertError) throw insertError;
 
@@ -814,6 +1086,219 @@ export async function createStudentAccountManual(input: {
 
   void input.adminUid;
   return { studentId: id, uid };
+}
+
+export type RegistrationLookupResult =
+  | {
+      status: "canRegister";
+      studentId: string;
+      firstName: string;
+      lastName: string;
+      gradeLevel?: string;
+      roomNumber?: string;
+      registrationToken: string;
+    }
+  | { status: "alreadyRegistered" }
+  | { status: "notFound" }
+  | { status: "disabled" };
+
+export async function lookupRegistrationForStudent(studentId: string): Promise<RegistrationLookupResult> {
+  const id = normalizeStudentId(studentId);
+  const account = await getStudentAccount(id);
+  if (!account) return { status: "notFound" };
+  if (account.status === "disabled") return { status: "disabled" };
+  if (account.isRegistered || account.currentPasswordHash) {
+    return { status: "alreadyRegistered" };
+  }
+
+  const { createRegistrationToken } = await import("@/lib/registration-token");
+  return {
+    status: "canRegister",
+    studentId: id,
+    firstName: account.firstName,
+    lastName: account.lastName,
+    gradeLevel: account.gradeLevel,
+    roomNumber: account.roomNumber,
+    registrationToken: createRegistrationToken(id),
+  };
+}
+
+export async function registerStudentAccount(input: {
+  studentId: string;
+  registrationToken: string;
+  password: string;
+  pin: string;
+}): Promise<
+  | {
+      ok: true;
+      access_token: string;
+      refresh_token: string;
+      studentId: string;
+      nickname: string;
+      uid: string;
+    }
+  | { ok: false; error: string }
+> {
+  const id = normalizeStudentId(input.studentId);
+  const rate = checkRateLimit(`register:${id}`);
+  if (!rate.allowed) {
+    return { ok: false, error: "ลองบ่อยเกินไป กรุณารอสักครู่" };
+  }
+
+  const { verifyRegistrationToken } = await import("@/lib/registration-token");
+  if (!verifyRegistrationToken(input.registrationToken, id)) {
+    return { ok: false, error: "การยืนยันตัวตนหมดอายุ กรุณาเริ่มใหม่" };
+  }
+
+  if (!isValidNewPassword(input.password)) {
+    return { ok: false, error: "รหัสผ่านต้องยาวอย่างน้อย 8 ตัว และมีตัวอักษรกับตัวเลข" };
+  }
+  if (!isValidPin(input.pin)) {
+    return { ok: false, error: "PIN ต้องเป็นตัวเลข 6 หลัก" };
+  }
+
+  const account = await getStudentAccount(id);
+  if (!account) return { ok: false, error: "ไม่พบเลขประจำตัวในระบบ" };
+  if (account.status === "disabled") return { ok: false, error: "บัญชีนี้ถูกปิดใช้งาน" };
+  if (account.isRegistered) return { ok: false, error: "บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ" };
+
+  const displayName = `${account.firstName} ${account.lastName}`.trim();
+  const passwordHash = hashSecret(input.password);
+  const pinHash = hashSecret(input.pin);
+  const uid = await ensureAuthUserForStudent(id, displayName, input.password);
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const { error: updateError } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({
+      id: uid,
+      linked_uid: uid,
+      email: studentIdToAuthEmail(id),
+      display_name: displayName,
+      school_password_hash: passwordHash,
+      current_password_hash: passwordHash,
+      pin_hash: pinHash,
+      must_change_password: false,
+      has_logged_in_once: true,
+      is_registered: true,
+      is_student_verified: true,
+      auth_methods: ["password", "pin"],
+      updated_at: now,
+    })
+    .eq("student_id", id);
+  if (updateError) throw updateError;
+
+  const registeredAccount: StudentAccount = {
+    ...account,
+    linkedUid: uid,
+    hasLoggedInOnce: true,
+    isRegistered: true,
+    currentPasswordHash: passwordHash,
+    schoolPasswordHash: passwordHash,
+    pinHash,
+  };
+  await syncAppUserFromStudent(uid, registeredAccount);
+  await reconcileStudentAuthState(uid, registeredAccount);
+
+  const session = await signInStudentSession(id, input.password, uid);
+  return {
+    ok: true,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    studentId: id,
+    nickname: account.nickname,
+    uid,
+  };
+}
+
+export async function resetPasswordWithPin(
+  studentId: string,
+  pin: string,
+  newPassword: string
+): Promise<
+  | {
+      ok: true;
+      access_token: string;
+      refresh_token: string;
+    }
+  | { ok: false; error: string }
+> {
+  const id = normalizeStudentId(studentId);
+  const rate = checkRateLimit(`reset-pin:${id}`);
+  if (!rate.allowed) {
+    return { ok: false, error: "ลองบ่อยเกินไป กรุณารอสักครู่" };
+  }
+
+  if (!isValidNewPassword(newPassword)) {
+    return { ok: false, error: "รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัว และมีตัวอักษรกับตัวเลข" };
+  }
+
+  const verified = await verifyStudentPin(id, pin);
+  if (!verified.ok) return { ok: false, error: verified.error };
+
+  const { account } = verified;
+  const displayName = `${account.firstName} ${account.lastName}`.trim();
+  const uid = await ensureAuthUserForStudent(id, displayName, newPassword);
+  const passwordHash = hashSecret(newPassword);
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({
+      linked_uid: uid,
+      current_password_hash: passwordHash,
+      must_change_password: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("student_id", id);
+  if (error) throw error;
+
+  const login = await loginStudentWithPassword(id, newPassword);
+  if (!login.ok) return { ok: false, error: login.error };
+
+  return {
+    ok: true,
+    access_token: login.access_token,
+    refresh_token: login.refresh_token,
+  };
+}
+
+export async function resetStudentAccountByAdmin(studentId: string): Promise<void> {
+  const id = normalizeStudentId(studentId);
+  const account = await getStudentAccount(id);
+  if (!account) throw new Error("ไม่พบเลขประจำตัวในระบบ");
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+
+  if (account.linkedUid) {
+    try {
+      await admin.auth.admin.deleteUser(account.linkedUid);
+    } catch (err) {
+      console.warn("resetStudentAccountByAdmin: delete auth user failed:", err);
+    }
+  }
+
+  const { error } = await admin
+    .from(STUDENT_ACCOUNTS_COLLECTION)
+    .update({
+      linked_uid: null,
+      school_password_hash: null,
+      current_password_hash: null,
+      pin_hash: null,
+      passkey_credentials: null,
+      auth_methods: null,
+      has_logged_in_once: false,
+      is_registered: false,
+      is_student_verified: false,
+      must_change_password: false,
+      updated_at: now,
+    })
+    .eq("student_id", id);
+  if (error) throw error;
+
+  await admin.from(PASSKEY_LOOKUP_COLLECTION).delete().eq("student_id", id);
 }
 
 export function getRpId(request?: NextRequest): string {

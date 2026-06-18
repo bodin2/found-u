@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Ban, Clock, LogOut, Loader2 } from "lucide-react";
 import { cn, formatThaiDate } from "@/lib/utils";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function BannedPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function BannedPage() {
   useEffect(() => {
     if (!loading) {
       if (!user) {
-        router.push("/login");
+        router.push(AUTH_ROUTES.hub);
         return;
       }
       if (!isBanned) {
@@ -57,7 +58,7 @@ export default function BannedPage() {
 
   const handleLogout = async () => {
     await logout();
-    router.push("/login");
+    router.push(AUTH_ROUTES.hub);
   };
 
   // Format countdown

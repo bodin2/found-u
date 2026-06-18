@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { m } from "framer-motion";
 import { useAuth } from "@/contexts/auth-context";
-import { Loader2, Package, Shield, Fingerprint, UserRound } from "lucide-react";
+import { Loader2, Fingerprint, Shield, UserRound } from "lucide-react";
 import {
   getDeviceProfile,
   postPasskeyLogin,
@@ -21,6 +21,8 @@ import {
 import { MotionProvider } from "@/components/motion/motion-provider";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { slideUp } from "@/lib/motion";
+import { AuthPageHeader } from "@/components/auth/auth-page-header";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 type LoginView = "quick" | "full";
 
@@ -70,6 +72,7 @@ function LoginPageContent() {
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [needsRegistrationHint, setNeedsRegistrationHint] = useState(false);
 
   const initRememberedDevice = useCallback(async () => {
     const remembered = getRememberedDevice();
@@ -112,8 +115,8 @@ function LoginPageContent() {
 
   useEffect(() => {
     if (user && !loading) {
-      if (mustChangePassword) router.replace("/login/change-password");
-      else if (mustSetupPin) router.replace("/login/setup-pin");
+      if (mustChangePassword) router.replace(AUTH_ROUTES.changePassword);
+      else if (mustSetupPin) router.replace(AUTH_ROUTES.setupPin);
       else if (isStudentVerified || isAdmin) router.replace("/home");
     }
   }, [user, loading, router, mustChangePassword, mustSetupPin, isStudentVerified, isAdmin]);
@@ -146,6 +149,7 @@ function LoginPageContent() {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg(null);
+    setNeedsRegistrationHint(false);
     try {
       const result = await postStudentLogin(studentId, password);
       setRememberedDevice({
@@ -155,7 +159,9 @@ function LoginPageContent() {
       await refreshSession();
       router.push(resolvePostLoginPath(result));
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "เข้าสู่ระบบไม่สำเร็จ");
+      const loginErr = err as Error & { needsRegistration?: boolean };
+      setErrorMsg(loginErr.message || "เข้าสู่ระบบไม่สำเร็จ");
+      setNeedsRegistrationHint(Boolean(loginErr.needsRegistration));
     } finally {
       setSubmitting(false);
     }
@@ -224,19 +230,9 @@ function LoginPageContent() {
 
   return (
     <div className="min-h-screen bg-bg-secondary flex flex-col">
-      <header className="border-b border-border-light bg-bg-primary/80 backdrop-blur-lg shrink-0">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-line-green flex items-center justify-center">
-            <Package className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-text-primary">foundu.forum</h1>
-            <p className="text-xs text-text-tertiary">
-              {view === "quick" ? "ยินดีต้อนรับกลับ" : "เข้าสู่ระบบนักเรียน"}
-            </p>
-          </div>
-        </div>
-      </header>
+      <AuthPageHeader
+        subtitle={view === "quick" ? "ยินดีต้อนรับกลับ" : "เข้าสู่ระบบนักเรียน"}
+      />
 
       <main className="flex-1 max-w-md mx-auto w-full px-4 py-4 sm:py-6">
         <div className="bg-bg-primary rounded-2xl border border-border-light shadow-card p-5 sm:p-6">
@@ -290,7 +286,7 @@ function LoginPageContent() {
                   เข้าด้วย PassKey
                 </button>
                 <div className="flex justify-between text-sm pt-1">
-                  <Link href="/login/forgot-pin" className="text-line-green hover:underline">
+                  <Link href={AUTH_ROUTES.forgotPin} className="text-line-green hover:underline">
                     ลืม PIN?
                   </Link>
                   <button
@@ -306,7 +302,7 @@ function LoginPageContent() {
           ) : (
             <>
               <Shield className="w-7 h-7 text-line-green mb-2" />
-              <h2 className="text-xl font-bold text-text-primary mb-0.5">ยินดีต้อนรับ</h2>
+              <h2 className="text-xl font-bold text-text-primary mb-0.5">เข้าสู่ระบบ</h2>
               <p className="text-sm text-text-secondary mb-4">
                 ใช้เลขประจำตัวและรหัสผ่าน หรือ Passkey
               </p>
@@ -346,7 +342,7 @@ function LoginPageContent() {
                   />
                 </div>
                 <Link
-                  href="/login/reset-password"
+                  href={AUTH_ROUTES.resetPassword}
                   className="text-sm text-line-green hover:underline block"
                 >
                   ลืมรหัสผ่าน?
@@ -390,11 +386,32 @@ function LoginPageContent() {
                   ใช้บัญชีอื่น
                 </button>
               )}
+
+              <Link
+                href={AUTH_ROUTES.hub}
+                className="block w-full mt-3 text-sm text-center text-text-secondary hover:text-text-primary"
+              >
+                กลับ
+              </Link>
+
+              <p className="text-sm text-center text-text-secondary mt-4">
+                ยังไม่ได้สมัคร?{" "}
+                <Link href={AUTH_ROUTES.register} className="text-line-green hover:underline">
+                  เริ่มใช้งาน
+                </Link>
+              </p>
             </>
           )}
 
           {errorMsg && (
             <p className="mt-3 text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
+          )}
+          {needsRegistrationHint && (
+            <p className="mt-2 text-sm text-center">
+              <Link href={AUTH_ROUTES.register} className="text-line-green hover:underline font-medium">
+                ยังไม่ได้สมัคร? เริ่มใช้งานที่นี่
+              </Link>
+            </p>
           )}
         </div>
       </main>

@@ -11,7 +11,11 @@ export async function POST(request: Request) {
     const result = await loginStudentWithPassword(parsed.data.studentId, parsed.data.password);
     if (!result.ok) {
       return NextResponse.json(
-        { error: result.error, retryAfterMs: result.retryAfterMs },
+        {
+          error: result.error,
+          retryAfterMs: result.retryAfterMs,
+          needsRegistration: result.needsRegistration,
+        },
         { status: result.retryAfterMs ? 429 : 401 }
       );
     }

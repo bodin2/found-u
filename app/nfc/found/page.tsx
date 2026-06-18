@@ -16,6 +16,7 @@ import { extractTagIdFromUrl } from "@/lib/nfc";
 import { resolveNfcTagApi, submitNfcFoundReportApi, type NfcResolveResult } from "@/lib/nfc-api";
 import { subscribeToContactTypes, type ContactTypeConfig } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcFoundReported } from "@/lib/logger";
 
@@ -57,7 +58,7 @@ function NfcFoundContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push("/login");
+    if (!authLoading && !user) router.push(AUTH_ROUTES.hub);
   }, [user, authLoading, router]);
 
   const loadTag = async (id: string) => {

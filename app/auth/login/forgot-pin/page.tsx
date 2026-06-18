@@ -8,6 +8,7 @@ import {
   postPasskeyLogin,
   postStudentLogin,
 } from "@/lib/student-auth-api";
+import { AUTH_ROUTES } from "@/lib/auth-routes";
 
 export default function ForgotPinPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function ForgotPinPage() {
     setError(null);
     try {
       const result = await postStudentLogin(studentId, password);
-      router.push("/login/setup-pin?reset=1");
+      router.push(`${AUTH_ROUTES.setupPin}?reset=1`);
       void result;
     } catch (err) {
       setError(err instanceof Error ? err.message : "ยืนยันตัวตนไม่สำเร็จ");
@@ -36,7 +37,7 @@ export default function ForgotPinPage() {
     setError(null);
     try {
       await postPasskeyLogin();
-      router.push("/login/setup-pin?reset=1");
+      router.push(`${AUTH_ROUTES.setupPin}?reset=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");
     } finally {
@@ -100,7 +101,11 @@ export default function ForgotPinPage() {
 
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-        <Link href="/login" className="block text-center text-sm text-line-green mt-4 hover:underline">
+        <p className="mt-4 text-xs text-text-tertiary text-center">
+          หากลืมทั้งรหัสผ่านและ PIN กรุณาติดต่อผู้ดูแลระบบหรือ Support
+        </p>
+
+        <Link href={AUTH_ROUTES.login} className="block text-center text-sm text-line-green mt-4 hover:underline">
           กลับหน้าเข้าสู่ระบบ
         </Link>
       </div>
