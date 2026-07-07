@@ -56,21 +56,21 @@ export default function RootLayout({
           >
             <AuthProvider>
               <AppModeProvider>
-              <BfcacheRestoreHandler />
-              <DataProvider>
-                <AuthGuard>
-                  {/* 
-                    Responsive layout wrapper
-                    - Mobile: max-w-md centered
-                    - Desktop: Full width for better experience
-                  */}
-                  <div className="min-h-screen bg-bg-secondary transition-colors">
-                    <div className="w-full min-h-screen bg-bg-primary transition-colors">
-                      {children}
+                <BfcacheRestoreHandler />
+                <DataProvider>
+                  <AuthGuard>
+                    {/* 
+                      Responsive layout wrapper
+                      - Mobile: max-w-md centered
+                      - Desktop: Full width for better experience
+                    */}
+                    <div className="min-h-screen bg-bg-secondary transition-colors">
+                      <div className="w-full min-h-screen bg-bg-primary transition-colors">
+                        {children}
+                      </div>
                     </div>
-                  </div>
-                </AuthGuard>
-              </DataProvider>
+                  </AuthGuard>
+                </DataProvider>
               </AppModeProvider>
             </AuthProvider>
           </ThemeProvider>
