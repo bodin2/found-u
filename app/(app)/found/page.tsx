@@ -72,6 +72,10 @@ import {
   isFoundHandoverDeadlineEnabled,
 } from "@/lib/found-handover";
 import { triggerFoundHandoverExpirySweep } from "@/lib/found-handover-client";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { inputStateClass } from "@/components/ui/validated-field";
+import { ValidationSummaryGroup } from "@/components/ui/validation-summary";
+import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
 
 type ReportMode = "vision" | "manual";
 
@@ -138,6 +142,36 @@ export default function ReportFoundPage() {
   const [trackingCode, setTrackingCode] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<Record<string, string>>({});
+
+  const stepFieldKeys = useMemo(() => {
+    if (formStep === 0) {
+      return {
+        errors: ["image", "description"],
+        warnings: ["itemName", "category", "color", "brand"],
+      };
+    }
+    if (formStep === 1) {
+      return { errors: ["locationFound", "locationCoords"], warnings: [] as string[] };
+    }
+    return { errors: [] as string[], warnings: ["contacts"] };
+  }, [formStep]);
+
+  const stepErrorIssues = useMemo(
+    () =>
+      recordToIssues(errors).filter((issue) =>
+        stepFieldKeys.errors.includes(issue.fieldId.replace("field-", ""))
+      ),
+    [errors, stepFieldKeys.errors]
+  );
+
+  const stepWarningIssues = useMemo(
+    () =>
+      recordToIssues(warnings, "warning").filter((issue) =>
+        stepFieldKeys.warnings.includes(issue.fieldId.replace("field-", ""))
+      ),
+    [warnings, stepFieldKeys.warnings]
+  );
+
   const [showMatches, setShowMatches] = useState(false);
   const [matches, setMatches] = useState<any[]>([]);
   const [submittedHandoverDeadline, setSubmittedHandoverDeadline] = useState<Date | null>(null);
@@ -844,6 +878,11 @@ export default function ReportFoundPage() {
               transition={slideUp.transition}
               className="space-y-5"
             >
+          <ValidationSummaryGroup
+            errors={stepErrorIssues}
+            warnings={stepWarningIssues}
+            className="mb-1"
+          />
           {formStep === 0 && (
           <>
           <div className="flex gap-2 mb-2">
@@ -897,7 +936,7 @@ export default function ReportFoundPage() {
                 }}
               />
               {errors.image && (
-                <div className="mt-2 text-xs text-red-500">{errors.image}</div>
+                <FieldValidationMessage message={errors.image} />
               )}
               {visionQuota && visionQuota.enabled && (
                 <div className="mt-3 text-xs text-green-700 dark:text-green-300">
@@ -914,14 +953,16 @@ export default function ReportFoundPage() {
           )}
 
           {reportMode === "manual" && (
-            <div className="mb-6">
+            <div id={fieldId("image")}>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 รูปถ่ายสิ่งของ <span className="text-red-500">*</span>
               </label>
 
-              {errors.image && (
-                <p className="text-xs text-red-500 mb-2">{errors.image}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("image")}
+                message={errors.image}
+                className="mb-2"
+              />
 
               {imagePreview ? (
                 <div className="relative rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-700">
@@ -970,35 +1011,41 @@ export default function ReportFoundPage() {
           )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor={fieldId("itemName")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 ชื่อของที่เจอ
               </label>
               <input
+                id={fieldId("itemName")}
                 type="text"
                 name="itemName"
                 value={formData.itemName}
                 onChange={handleFormChange}
                 placeholder="เช่น กระเป๋าสตางค์"
-                className={cn("input-line", warnings.itemName && "ring-1 ring-amber-300")}
+                aria-describedby={warnings.itemName ? fieldErrorId("itemName") : undefined}
+                className={cn("input-line", inputStateClass(undefined, warnings.itemName))}
               />
-              {warnings.itemName && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">{warnings.itemName}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("itemName")}
+                message={warnings.itemName}
+                severity="warning"
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor={fieldId("category")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 หมวดหมู่
               </label>
               <div className="relative">
                 <select
+                  id={fieldId("category")}
                   name="category"
                   value={formData.category}
                   onChange={handleFormChange}
+                  aria-describedby={warnings.category ? fieldErrorId("category") : undefined}
                   className={cn(
                     "input-line appearance-none pr-10",
                     !formData.category && "text-gray-400",
-                    warnings.category && "ring-1 ring-amber-300"
+                    inputStateClass(undefined, warnings.category)
                   )}
                 >
                   <option value="">เลือกหมวดหมู่</option>
@@ -1010,64 +1057,75 @@ export default function ReportFoundPage() {
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
               </div>
-              {warnings.category && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">{warnings.category}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("category")}
+                message={warnings.category}
+                severity="warning"
+              />
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label htmlFor={fieldId("color")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   สี
                 </label>
                 <input
+                  id={fieldId("color")}
                   type="text"
                   name="color"
                   value={formData.color}
                   onChange={handleFormChange}
                   placeholder="เช่น ดำ"
-                  className={cn("input-line", warnings.color && "ring-1 ring-amber-300")}
+                  aria-describedby={warnings.color ? fieldErrorId("color") : undefined}
+                  className={cn("input-line", inputStateClass(undefined, warnings.color))}
                 />
-                {warnings.color && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">{warnings.color}</p>
-                )}
+                <FieldValidationMessage
+                  id={fieldErrorId("color")}
+                  message={warnings.color}
+                  severity="warning"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label htmlFor={fieldId("brand")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   ยี่ห้อ
                 </label>
                 <input
+                  id={fieldId("brand")}
                   type="text"
                   name="brand"
                   value={formData.brand}
                   onChange={handleFormChange}
                   placeholder="เช่น Apple"
-                  className={cn("input-line", warnings.brand && "ring-1 ring-amber-300")}
+                  aria-describedby={warnings.brand ? fieldErrorId("brand") : undefined}
+                  className={cn("input-line", inputStateClass(undefined, warnings.brand))}
                 />
-                {warnings.brand && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">{warnings.brand}</p>
-                )}
+                <FieldValidationMessage
+                  id={fieldErrorId("brand")}
+                  message={warnings.brand}
+                  severity="warning"
+                />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor={fieldId("description")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 รายละเอียดของที่เจอ <span className="text-red-500">*</span>
               </label>
               <textarea
+                id={fieldId("description")}
                 name="description"
                 value={formData.description}
                 onChange={handleFormChange}
                 placeholder="เช่น มีเคสสีดำ มีรอยสติกเกอร์"
                 rows={3}
-                className={cn(
-                  "input-line resize-none",
-                  errors.description && "ring-2 ring-red-200 bg-red-50"
-                )}
+                aria-invalid={errors.description ? true : undefined}
+                aria-describedby={errors.description ? fieldErrorId("description") : undefined}
+                className={cn("input-line resize-none", inputStateClass(errors.description))}
               />
-              {errors.description && (
-                <p className="text-xs text-red-500 mt-1.5">{errors.description}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("description")}
+                message={errors.description}
+              />
             </div>
           </>
           )}
@@ -1075,23 +1133,24 @@ export default function ReportFoundPage() {
           {formStep === 1 && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor={fieldId("locationFound")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 สถานที่เจอ <span className="text-red-500">*</span>
               </label>
               <input
+                id={fieldId("locationFound")}
                 type="text"
                 name="locationFound"
                 value={formData.locationFound}
                 onChange={handleFormChange}
                 placeholder="เช่น ม้านั่งหน้าห้องสมุด"
-                className={cn(
-                  "input-line",
-                  errors.locationFound && "ring-2 ring-red-200 bg-red-50"
-                )}
+                aria-invalid={errors.locationFound ? true : undefined}
+                aria-describedby={errors.locationFound ? fieldErrorId("locationFound") : undefined}
+                className={cn("input-line", inputStateClass(errors.locationFound))}
               />
-              {errors.locationFound && (
-                <p className="text-xs text-red-500 mt-1.5">{errors.locationFound}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("locationFound")}
+                message={errors.locationFound}
+              />
             </div>
 
             {appSettings.mapsEnabled && (
@@ -1122,9 +1181,10 @@ export default function ReportFoundPage() {
                   showPolygonVertices={false}
                   className="h-[200px] sm:h-[240px] rounded-xl overflow-hidden"
                 />
-                {errors.locationCoords && (
-                  <p className="text-xs text-red-500">{errors.locationCoords}</p>
-                )}
+                <FieldValidationMessage
+                  id={fieldErrorId("locationCoords")}
+                  message={errors.locationCoords}
+                />
               </div>
             )}
           </>
@@ -1164,9 +1224,12 @@ export default function ReportFoundPage() {
                   <p className="text-xs text-gray-400 mt-0.5">
                     ไม่บังคับ - สำหรับติดต่อกลับหากต้องการข้อมูลเพิ่ม
                   </p>
-                  {warnings.contacts && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{warnings.contacts}</p>
-                  )}
+                  <FieldValidationMessage
+                    id={fieldErrorId("contacts")}
+                    message={warnings.contacts}
+                    severity="warning"
+                    className="mt-1"
+                  />
                 </div>
                 {contacts.length < 3 && (
                   <button

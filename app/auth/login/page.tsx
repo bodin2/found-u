@@ -23,6 +23,7 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { slideUp } from "@/lib/motion";
 import { AuthPageHeader } from "@/components/auth/auth-page-header";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 type LoginView = "quick" | "full";
 
@@ -409,7 +410,7 @@ function LoginPageContent() {
           )}
 
           {errorMsg && (
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{errorMsg}</p>
+            <StatusAlert variant="error" message={errorMsg} className="mt-3" />
           )}
           {needsRegistrationHint && (
             <p className="mt-2 text-sm text-center">

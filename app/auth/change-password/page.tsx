@@ -6,6 +6,7 @@ import { Loader2, KeyRound } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { postChangePassword } from "@/lib/student-auth-api";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -94,7 +95,7 @@ export default function ChangePasswordPage() {
               minLength={8}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <StatusAlert variant="error" message={error} />}
           <button
             type="submit"
             disabled={submitting}

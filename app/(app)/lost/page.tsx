@@ -34,6 +34,10 @@ import { useAppDialog } from "@/hooks/use-app-dialog";
 import { useMapView } from "@/hooks/use-map-view";
 import { getMapDisplayPosition } from "@/lib/geolocation";
 import { logItemCreated } from "@/lib/logger";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { inputStateClass } from "@/components/ui/validated-field";
+import { ValidationSummary } from "@/components/ui/validation-summary";
+import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
 
 const LOST_FORM_STEPS = [
   { id: "details", label: "รายละเอียด" },
@@ -78,6 +82,18 @@ export default function ReportLostPage() {
   );
 
   const boundaryEnforced = schoolBoundary.length >= 3;
+
+  const stepErrorIssues = useMemo(() => {
+    const keys =
+      formStep === 0
+        ? ["itemName", "category"]
+        : formStep === 1
+          ? ["locationLost"]
+          : ["contacts"];
+    return recordToIssues(errors).filter((issue) =>
+      keys.includes(issue.fieldId.replace("field-", ""))
+    );
+  }, [errors, formStep]);
 
   const isWithinSchoolBoundary = (coords: { lat: number; lng: number }) =>
     !boundaryEnforced || isPointInPolygon(coords, schoolBoundary);
@@ -435,35 +451,45 @@ export default function ReportLostPage() {
               transition={slideUp.transition}
               className="space-y-5"
             >
+            <ValidationSummary issues={stepErrorIssues} className="mb-1" />
             {formStep === 0 && (
             <>
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label htmlFor={fieldId("itemName")} className="block text-sm font-medium text-text-secondary mb-2">
                 ชื่อสิ่งของ <span className="text-red-500">*</span>
               </label>
               <input
+                id={fieldId("itemName")}
                 type="text"
                 name="itemName"
                 value={formData.itemName}
                 onChange={handleFormChange}
                 placeholder="เช่น โทรศัพท์, กระเป๋าสตางค์"
-                className={cn("input-line", errors.itemName && "ring-2 ring-red-200 bg-red-50")}
+                aria-invalid={errors.itemName ? true : undefined}
+                aria-describedby={errors.itemName ? fieldErrorId("itemName") : undefined}
+                className={cn("input-line", inputStateClass(errors.itemName))}
               />
-              {errors.itemName && <p className="text-xs text-red-500 mt-1.5">{errors.itemName}</p>}
+              <FieldValidationMessage
+                id={fieldErrorId("itemName")}
+                message={errors.itemName}
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor={fieldId("category")} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 ประเภท <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <select
+                  id={fieldId("category")}
                   name="category"
                   value={formData.category}
                   onChange={handleFormChange}
+                  aria-invalid={errors.category ? true : undefined}
+                  aria-describedby={errors.category ? fieldErrorId("category") : undefined}
                   className={cn(
                     "input-line appearance-none pr-10",
-                    errors.category && "ring-2 ring-red-200 bg-red-50",
+                    inputStateClass(errors.category),
                     !formData.category && "text-gray-400"
                   )}
                 >
@@ -476,7 +502,10 @@ export default function ReportLostPage() {
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
               </div>
-              {errors.category && <p className="text-xs text-red-500 mt-1.5">{errors.category}</p>}
+              <FieldValidationMessage
+                id={fieldErrorId("category")}
+                message={errors.category}
+              />
             </div>
 
             <div>
@@ -498,23 +527,24 @@ export default function ReportLostPage() {
             {formStep === 1 && (
             <>
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label htmlFor={fieldId("locationLost")} className="block text-sm font-medium text-text-secondary mb-2">
                 สถานที่ทำหาย <span className="text-red-500">*</span>
               </label>
               <input
+                id={fieldId("locationLost")}
                 type="text"
                 name="locationLost"
                 value={formData.locationLost}
                 onChange={handleFormChange}
                 placeholder="เช่น ตึก 2 ชั้น 3"
-                className={cn(
-                  "input-line",
-                  errors.locationLost && "ring-2 ring-red-200 bg-red-50"
-                )}
+                aria-invalid={errors.locationLost ? true : undefined}
+                aria-describedby={errors.locationLost ? fieldErrorId("locationLost") : undefined}
+                className={cn("input-line", inputStateClass(errors.locationLost))}
               />
-              {errors.locationLost && (
-                <p className="text-xs text-red-500 mt-1.5">{errors.locationLost}</p>
-              )}
+              <FieldValidationMessage
+                id={fieldErrorId("locationLost")}
+                message={errors.locationLost}
+              />
             </div>
 
             {appSettings.mapsEnabled && (
@@ -578,7 +608,12 @@ export default function ReportLostPage() {
               </div>
             </div>
 
-            {errors.contacts && <p className="text-xs text-red-500">{errors.contacts}</p>}
+            <div id={fieldId("contacts")}>
+              <FieldValidationMessage
+                id={fieldErrorId("contacts")}
+                message={errors.contacts}
+              />
+            </div>
 
             <div className="space-y-3">
               {contacts.map((contact, index) => (

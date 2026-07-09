@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Radio, Loader2, Keyboard, QrCode } from "lucide-react";
+import { Radio, Loader2, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isWebNfcSupported, readNfcTag, getNfcErrorMessage } from "@/lib/nfc";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 interface NfcScannerProps {
   onScan: (result: { tagId?: string; tagUid?: string; url?: string }) => void;
@@ -95,16 +96,26 @@ export default function NfcScanner({
       </button>
 
       {!nfcSupported && (
-        <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200 text-center space-y-1">
-          <p className="flex items-center justify-center gap-2 font-medium">
-            <QrCode className="w-4 h-4" />
-            อุปกรณ์นี้ไม่รองรับ Web NFC
-          </p>
-          <p>ใช้ QR Code บนสติ๊กเกอร์แทน (iOS / Desktop) — ลงทะเบียนแล้วพิมพ์ QR ได้ทันที</p>
-        </div>
+        <StatusAlert
+          variant="warning"
+          title="อุปกรณ์นี้ไม่รองรับ Web NFC"
+          message="ใช้ QR Code บนสติ๊กเกอร์แทน (iOS / Desktop) — ลงทะเบียนแล้วพิมพ์ QR ได้ทันที"
+          centered
+          action={{
+            label: "กรอกรหัส Tag แทน",
+            onClick: () => setShowManual(true),
+          }}
+        />
       )}
 
-      {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+      {error && nfcSupported && (
+        <StatusAlert
+          variant="error"
+          message={error}
+          centered
+          action={{ label: "ลองอีกครั้ง", onClick: handleScan }}
+        />
+      )}
 
       <button
         type="button"

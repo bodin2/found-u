@@ -9,6 +9,7 @@ import {
   postStudentLogin,
 } from "@/lib/student-auth-api";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 export default function ForgotPinPage() {
   const router = useRouter();
@@ -99,7 +100,7 @@ export default function ForgotPinPage() {
           </button>
         </div>
 
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <StatusAlert variant="error" message={error} className="mt-3" />}
 
         <p className="mt-4 text-xs text-text-tertiary text-center">
           หากลืมทั้งรหัสผ่านและ PIN กรุณาติดต่อผู้ดูแลระบบหรือ Support

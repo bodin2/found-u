@@ -33,6 +33,10 @@ import {
 import { StudentAppShell } from "@/components/layout/student-app-shell";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { StatusAlert } from "@/components/ui/status-alert";
+import { ResponsiveModal } from "@/components/ui/responsive-modal";
+import { inputStateClass } from "@/components/ui/validated-field";
+import { fieldId, humanizeFeedbackMessage } from "@/lib/feedback/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { cn } from "@/lib/utils";
 import { slideUp } from "@/lib/motion";
@@ -74,12 +78,21 @@ export default function SettingsPage() {
   const [verifyMode, setVerifyMode] = useState<"pin" | "password">("pin");
   const [passwordAction, setPasswordAction] = useState<ConnectionAction | null>(null);
   const [passwordChecking, setPasswordChecking] = useState(false);
+  const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null);
   const [connectionModalOpen, setConnectionModalOpen] = useState(false);
   const [connectionModalLoading, setConnectionModalLoading] = useState(false);
   const [connectionModalType, setConnectionModalType] = useState<ConnectionResultType | null>(null);
   const [connectionResult, setConnectionResult] = useState<ConnectionResultData | null>(null);
 
   const hasPinMethod = hasPinAuthMethod(appUser, hasPin);
+
+  const closePasswordPrompt = () => {
+    if (passwordChecking) return;
+    setPasswordPromptOpen(false);
+    setVerifyInput("");
+    setPasswordAction(null);
+    setPasswordPromptError(null);
+  };
 
   const closeConnectionModal = () => {
     setConnectionModalOpen(false);
@@ -219,7 +232,6 @@ export default function SettingsPage() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "ลงทะเบียน Passkey ไม่สำเร็จ";
-      setSecurityError(message);
       setConnectionResult({
         type: "passkey",
         success: false,
@@ -266,6 +278,8 @@ export default function SettingsPage() {
   const openPasswordPrompt = (action: ConnectionAction) => {
     setPasswordAction(action);
     setVerifyInput("");
+    setPasswordPromptError(null);
+    setSecurityError(null);
     setVerifyMode(hasPinMethod ? "pin" : "password");
     setPasswordPromptOpen(true);
   };
@@ -273,6 +287,7 @@ export default function SettingsPage() {
   const handleConfirmedConnectionAction = async () => {
     if (!user || !passwordAction) return;
     setPasswordChecking(true);
+    setPasswordPromptError(null);
     try {
       if (verifyMode === "pin") {
         await postVerifyPin(verifyInput);
@@ -281,8 +296,11 @@ export default function SettingsPage() {
       }
       setPasswordPromptOpen(false);
       setVerifyInput("");
+      setPasswordPromptError(null);
+      const action = passwordAction;
+      setPasswordAction(null);
 
-      switch (passwordAction) {
+      switch (action) {
         case "addPasskey":
           await handleRegisterPasskey();
           break;
@@ -292,10 +310,9 @@ export default function SettingsPage() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "ยืนยันตัวตนไม่สำเร็จ";
-      setSecurityError(message);
+      setPasswordPromptError(humanizeFeedbackMessage(message));
     } finally {
       setPasswordChecking(false);
-      setPasswordAction(null);
     }
   };
 
@@ -400,10 +417,13 @@ export default function SettingsPage() {
     </section>
   );
 
+  const showInlineSecurityError =
+    securityError && !passwordPromptOpen && !connectionModalOpen;
+
   const securityPanel = (
     <section className="bg-bg-card rounded-2xl border border-border-light p-5 shadow-card space-y-4">
       {securityMessage && <p className="text-sm text-green-600">{securityMessage}</p>}
-      {securityError && <p className="text-sm text-red-600">{securityError}</p>}
+      {showInlineSecurityError && <StatusAlert variant="error" message={securityError} />}
 
       <Link
         href={AUTH_ROUTES.changePassword}
@@ -538,74 +558,96 @@ export default function SettingsPage() {
           result={connectionResult}
         />
 
-        {passwordPromptOpen && (
-          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-bg-card border border-border-light p-5 space-y-3">
-              <p className="font-medium text-text-primary">ยืนยันตัวตน</p>
-              <p className="text-xs text-text-secondary">
-                {verifyMode === "pin"
-                  ? "กรอก PIN 6 หลักเพื่อดำเนินการต่อ"
-                  : "กรอกรหัสผ่านปัจจุบันเพื่อดำเนินการต่อ"}
-              </p>
+        <ResponsiveModal
+          open={passwordPromptOpen}
+          onClose={closePasswordPrompt}
+          title="ยืนยันตัวตน"
+          description={
+            verifyMode === "pin"
+              ? "กรอก PIN 6 หลักเพื่อดำเนินการต่อ"
+              : "กรอกรหัสผ่านปัจจุบันเพื่อดำเนินการต่อ"
+          }
+          size="sm"
+          showCloseButton={!passwordChecking}
+          closeOnBackdrop={!passwordChecking}
+          footer={
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={closePasswordPrompt}
+                disabled={passwordChecking}
+                className="flex-1 py-2.5 rounded-xl border border-border-light text-text-secondary disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmedConnectionAction()}
+                disabled={passwordChecking || !canSubmitVerification}
+                className="flex-1 py-2.5 rounded-xl bg-line-green text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {passwordChecking && <Loader2 className="w-4 h-4 animate-spin" />}
+                ยืนยัน
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3 pb-2">
+            {passwordPromptError ? (
+              <StatusAlert
+                id="password-prompt-error"
+                variant="error"
+                message={passwordPromptError}
+              />
+            ) : null}
+            <div>
+              <label htmlFor={fieldId("verifyInput")} className="sr-only">
+                {verifyMode === "pin" ? "PIN 6 หลัก" : "รหัสผ่านปัจจุบัน"}
+              </label>
               <input
+                id={fieldId("verifyInput")}
                 type="password"
                 inputMode={verifyMode === "pin" ? "numeric" : "text"}
                 maxLength={verifyMode === "pin" ? 6 : undefined}
                 value={verifyInput}
-                onChange={(e) =>
+                onChange={(e) => {
                   setVerifyInput(
                     verifyMode === "pin"
                       ? e.target.value.replace(/\D/g, "").slice(0, 6)
                       : e.target.value
-                  )
-                }
+                  );
+                  if (passwordPromptError) setPasswordPromptError(null);
+                }}
                 placeholder={verifyMode === "pin" ? "PIN 6 หลัก" : "รหัสผ่านปัจจุบัน"}
-                className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary text-text-primary font-mono tracking-widest text-center"
+                aria-invalid={passwordPromptError ? true : undefined}
+                aria-describedby={passwordPromptError ? "password-prompt-error" : undefined}
+                className={cn(
+                  "w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary text-text-primary font-mono tracking-widest text-center",
+                  inputStateClass(passwordPromptError ?? undefined)
+                )}
                 autoComplete={verifyMode === "pin" ? "one-time-code" : "current-password"}
               />
-              {hasPinMethod ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVerifyMode(verifyMode === "pin" ? "password" : "pin");
-                    setVerifyInput("");
-                  }}
-                  disabled={passwordChecking}
-                  className="text-xs text-line-green hover:underline disabled:opacity-50"
-                >
-                  {verifyMode === "pin" ? "ใช้รหัสผ่านแทน" : "ใช้ PIN แทน"}
-                </button>
-              ) : (
-                <p className="text-xs text-text-tertiary">
-                  ยังไม่ได้ตั้ง PIN — ใช้รหัสผ่านเพื่อยืนยัน
-                </p>
-              )}
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPasswordPromptOpen(false);
-                    setVerifyInput("");
-                    setPasswordAction(null);
-                  }}
-                  disabled={passwordChecking}
-                  className="flex-1 py-2.5 rounded-xl border border-border-light text-text-secondary disabled:opacity-50"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmedConnectionAction}
-                  disabled={passwordChecking || !canSubmitVerification}
-                  className="flex-1 py-2.5 rounded-xl bg-line-green text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {passwordChecking && <Loader2 className="w-4 h-4 animate-spin" />}
-                  ยืนยัน
-                </button>
-              </div>
             </div>
+            {hasPinMethod ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setVerifyMode(verifyMode === "pin" ? "password" : "pin");
+                  setVerifyInput("");
+                  setPasswordPromptError(null);
+                }}
+                disabled={passwordChecking}
+                className="text-xs text-line-green hover:underline disabled:opacity-50"
+              >
+                {verifyMode === "pin" ? "ใช้รหัสผ่านแทน" : "ใช้ PIN แทน"}
+              </button>
+            ) : (
+              <p className="text-xs text-text-tertiary">
+                ยังไม่ได้ตั้ง PIN — ใช้รหัสผ่านเพื่อยืนยัน
+              </p>
+            )}
           </div>
-        )}
+        </ResponsiveModal>
 
         {isAdmin && (
           <Link

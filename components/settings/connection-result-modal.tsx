@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Fingerprint, Loader2, User, XCircle } from "lucide-react";
 import { ResponsiveModal } from "@/components/ui/responsive-modal";
+import { StatusAlert } from "@/components/ui/status-alert";
 import { cn } from "@/lib/utils";
 
 export type ConnectionResultType = "passkey";
@@ -167,9 +168,7 @@ export function ConnectionResultModal({
           )}
 
           {!isSuccess && result.errorMessage && (
-            <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/50 px-4 py-3">
-              <p className="text-sm text-red-700 dark:text-red-300">{result.errorMessage}</p>
-            </div>
+            <StatusAlert variant="error" message={result.errorMessage} />
           )}
         </div>
       ) : (

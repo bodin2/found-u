@@ -24,6 +24,10 @@ import {
 import { wizardBrandingSchema } from "@/lib/setup/validations/wizard-branding";
 import { wizardAiConfigSchema } from "@/lib/setup/validations/wizard-ai";
 import { wizardAdminSchema } from "@/lib/setup/validations/wizard-admin";
+import {
+  type ValidationIssue,
+  zodErrorToIssues,
+} from "@/lib/feedback/types";
 
 export type SetupWizardInitialState = {
   initialStep: number;
@@ -40,7 +44,8 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
   const [phase, setPhase] = useState<Phase>("init");
   const [step, setStep] = useState(initialStep);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [brandingDraft, setBrandingDraft] = useState<BrandingDraft>(branding);
   const [aiDraft, setAiDraft] = useState<AiDraft>(ai);
@@ -66,31 +71,34 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
   }, []);
 
   const handleBack = () => {
-    setError(null);
+    setValidationIssues([]);
+    setFormError(null);
     setStep((s) => Math.max(0, s - 1));
   };
 
   const handleSkipAi = async () => {
-    setError(null);
+    setValidationIssues([]);
+    setFormError(null);
     setIsSubmitting(true);
     const result = await skipAiConfigAction();
     setIsSubmitting(false);
     if (!result.ok) {
-      setError(result.error);
+      setFormError(result.error);
       return;
     }
     setStep(2);
   };
 
   const handleNext = async () => {
-    setError(null);
+    setValidationIssues([]);
+    setFormError(null);
 
     if (step === 0) {
       const parsed = wizardBrandingSchema.safeParse({
         schoolName: brandingDraft.schoolName,
       });
       if (!parsed.success) {
-        setError(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+        setValidationIssues(zodErrorToIssues(parsed.error));
         return;
       }
 
@@ -106,7 +114,7 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
       const result = await saveBrandingAction(formData);
       setIsSubmitting(false);
       if (!result.ok) {
-        setError(result.error);
+        setFormError(result.error);
         return;
       }
       setStep(1);
@@ -116,7 +124,7 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
     if (step === 1) {
       const parsed = wizardAiConfigSchema.safeParse(aiDraft);
       if (!parsed.success) {
-        setError(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+        setValidationIssues(zodErrorToIssues(parsed.error));
         return;
       }
 
@@ -124,7 +132,7 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
       const result = await saveAiConfigAction(parsed.data);
       setIsSubmitting(false);
       if (!result.ok) {
-        setError(result.error);
+        setFormError(result.error);
         return;
       }
       setStep(2);
@@ -132,10 +140,11 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
   };
 
   const handleComplete = async () => {
-    setError(null);
+    setValidationIssues([]);
+    setFormError(null);
     const parsed = wizardAdminSchema.safeParse(adminDraft);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+      setValidationIssues(zodErrorToIssues(parsed.error));
       return;
     }
 
@@ -143,7 +152,7 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
     const result = await completeSetupAction(parsed.data);
     setIsSubmitting(false);
     if (!result.ok) {
-      setError(result.error);
+      setFormError(result.error);
       return;
     }
     setPhase("done");
@@ -176,7 +185,8 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
           <StepBranding
             initial={brandingDraft}
             onChange={handleBrandingChange}
-            error={error}
+            issues={validationIssues}
+            formError={formError}
           />
         ) : null}
         {step === 1 ? (
@@ -184,7 +194,8 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
             initial={aiDraft}
             onChange={handleAiChange}
             onSkip={() => void handleSkipAi()}
-            error={error}
+            issues={validationIssues}
+            formError={formError}
             isSubmitting={isSubmitting}
           />
         ) : null}
@@ -192,7 +203,8 @@ export function SetupWizard({ initialStep, branding, ai }: SetupWizardProps) {
           <StepSuperadmin
             initial={adminDraft}
             onChange={handleAdminChange}
-            error={error}
+            issues={validationIssues}
+            formError={formError}
           />
         ) : null}
 

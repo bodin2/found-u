@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { postSetupPin } from "@/lib/student-auth-api";
 import { setRememberedDevice } from "@/lib/auth-device-memory";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 export default function SetupPinPage() {
   return (
@@ -119,7 +120,7 @@ function SetupPinContent() {
               autoComplete="new-password"
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <StatusAlert variant="error" message={error} />}
           <button
             type="submit"
             disabled={submitting}

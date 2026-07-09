@@ -6,6 +6,7 @@ import { useState } from "react";
 import { KeyRound, Loader2, RotateCcw } from "lucide-react";
 import { postResetPassword, postResetPasswordWithPin } from "@/lib/student-auth-api";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 type ResetMode = "pin" | "school";
 
@@ -149,7 +150,7 @@ export default function ResetPasswordPage() {
               required
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <StatusAlert variant="error" message={error} />}
           <button
             type="submit"
             disabled={submitting}

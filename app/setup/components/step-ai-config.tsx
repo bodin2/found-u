@@ -8,6 +8,17 @@ import {
   type WizardAiConfigInput,
 } from "@/lib/setup/validations/wizard-ai";
 import { testAiCredentialsAction } from "@/app/setup/actions";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { ValidationSummary } from "@/components/ui/validation-summary";
+import { StatusAlert } from "@/components/ui/status-alert";
+import { inputStateClass } from "@/components/ui/validated-field";
+import {
+  fieldErrorId,
+  fieldId,
+  getIssueMessage,
+  type ValidationIssue,
+} from "@/lib/feedback/types";
+import { cn } from "@/lib/utils";
 
 export type AiDraft = WizardAiConfigInput;
 
@@ -15,7 +26,8 @@ type StepAiConfigProps = {
   initial: AiDraft;
   onChange: (draft: AiDraft) => void;
   onSkip: () => void;
-  error?: string | null;
+  issues?: ValidationIssue[];
+  formError?: string | null;
   isSubmitting?: boolean;
 };
 
@@ -25,7 +37,8 @@ export function StepAiConfig({
   initial,
   onChange,
   onSkip,
-  error,
+  issues = [],
+  formError,
   isSubmitting,
 }: StepAiConfigProps) {
   const [draft, setDraft] = useState<AiDraft>(initial);
@@ -64,6 +77,8 @@ export function StepAiConfig({
 
   const showGemini = draft.provider === "auto" || draft.provider === "gemini";
   const showOpenRouter = draft.provider === "auto" || draft.provider === "openrouter";
+  const geminiError = getIssueMessage(issues, "geminiApiKey");
+  const openrouterError = getIssueMessage(issues, "openrouterApiKey");
 
   return (
     <div className="space-y-4">
@@ -71,6 +86,9 @@ export function StepAiConfig({
         <h2 className="text-base font-semibold text-text-primary">ตั้งค่า AI (ไม่บังคับ)</h2>
         <InfoTooltip content="ใช้ free tier ได้ — ตั้งทีหลังในแผงแอดมินก็ได้" />
       </div>
+
+      <ValidationSummary issues={issues} title="กรุณาตรวจสอบข้อมูลในขั้นตอนนี้:" />
+      {formError ? <StatusAlert variant="error" message={formError} /> : null}
 
       <SegmentedTabs<AiProviderTab>
         value={(draft.provider === "none" ? "auto" : draft.provider) as AiProviderTab}
@@ -84,29 +102,50 @@ export function StepAiConfig({
 
       {showGemini ? (
         <div>
-          <label className="block text-sm font-medium mb-1">Gemini API Key</label>
+          <label htmlFor={fieldId("geminiApiKey")} className="block text-sm font-medium mb-1">
+            Gemini API Key
+          </label>
           <input
+            id={fieldId("geminiApiKey")}
             type="password"
             value={draft.geminiApiKey ?? ""}
             onChange={(e) => update("geminiApiKey", e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border border-border-light font-mono text-sm"
+            aria-invalid={geminiError ? true : undefined}
+            aria-describedby={geminiError ? fieldErrorId("geminiApiKey") : undefined}
+            className={cn(
+              "w-full px-4 py-3 rounded-xl border border-border-light font-mono text-sm",
+              inputStateClass(geminiError)
+            )}
             placeholder="AIza..."
             autoComplete="off"
           />
+          <FieldValidationMessage id={fieldErrorId("geminiApiKey")} message={geminiError} />
         </div>
       ) : null}
 
       {showOpenRouter ? (
         <>
           <div>
-            <label className="block text-sm font-medium mb-1">OpenRouter API Key</label>
+            <label htmlFor={fieldId("openrouterApiKey")} className="block text-sm font-medium mb-1">
+              OpenRouter API Key
+            </label>
             <input
+              id={fieldId("openrouterApiKey")}
               type="password"
               value={draft.openrouterApiKey ?? ""}
               onChange={(e) => update("openrouterApiKey", e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-border-light font-mono text-sm"
+              aria-invalid={openrouterError ? true : undefined}
+              aria-describedby={openrouterError ? fieldErrorId("openrouterApiKey") : undefined}
+              className={cn(
+                "w-full px-4 py-3 rounded-xl border border-border-light font-mono text-sm",
+                inputStateClass(openrouterError)
+              )}
               placeholder="sk-or-..."
               autoComplete="off"
+            />
+            <FieldValidationMessage
+              id={fieldErrorId("openrouterApiKey")}
+              message={openrouterError}
             />
           </div>
           <div>
@@ -158,7 +197,7 @@ export function StepAiConfig({
         {testing ? "กำลังทดสอบ..." : "ทดสอบการเชื่อมต่อ"}
       </button>
       {testMessage ? <p className="text-sm text-line-green">{testMessage}</p> : null}
-      {testError ? <p className="text-sm text-destructive">{testError}</p> : null}
+      {testError ? <StatusAlert variant="error" message={testError} /> : null}
 
       <button
         type="button"
@@ -168,8 +207,6 @@ export function StepAiConfig({
       >
         ข้ามขั้นตอนนี้
       </button>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   );
 }

@@ -25,6 +25,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcTagRegistered } from "@/lib/logger";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { inputStateClass } from "@/components/ui/validated-field";
+import { ValidationSummary } from "@/components/ui/validation-summary";
+import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
 
 export default function NfcRegisterPage() {
   const router = useRouter();
@@ -77,6 +81,13 @@ export default function NfcRegisterPage() {
     const next = [...contacts];
     next[index] = { ...next[index], [field]: value };
     setContacts(next);
+    if (errors.contacts) {
+      setErrors((prev) => {
+        const updated = { ...prev };
+        delete updated.contacts;
+        return updated;
+      });
+    }
   };
 
   const validate = () => {
@@ -287,26 +298,54 @@ export default function NfcRegisterPage() {
             {nfcSupported ? "ขั้นตอนที่ 2: ข้อมูลสิ่งของ" : "ข้อมูลสิ่งของ"}
           </p>
 
+          <ValidationSummary issues={recordToIssues(errors)} />
+
           <div>
-            <label className="text-sm text-gray-600 dark:text-gray-400">ชื่อสิ่งของ</label>
+            <label htmlFor={fieldId("itemName")} className="text-sm text-gray-600 dark:text-gray-400">
+              ชื่อสิ่งของ
+            </label>
             <input
+              id={fieldId("itemName")}
               name="itemName"
               value={formData.itemName}
-              onChange={(e) => setFormData((p) => ({ ...p, itemName: e.target.value }))}
-              className="w-full mt-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
+              onChange={(e) => {
+                setFormData((p) => ({ ...p, itemName: e.target.value }));
+                if (errors.itemName) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.itemName;
+                    return next;
+                  });
+                }
+              }}
+              aria-invalid={errors.itemName ? true : undefined}
+              aria-describedby={errors.itemName ? fieldErrorId("itemName") : undefined}
+              className={cn("w-full mt-1 input-line", inputStateClass(errors.itemName))}
               placeholder="เช่น กระเป๋าสตางค์"
             />
-            {errors.itemName && <p className="text-red-500 text-sm mt-1">{errors.itemName}</p>}
+            <FieldValidationMessage id={fieldErrorId("itemName")} message={errors.itemName} />
           </div>
 
           <div>
-            <label className="text-sm text-gray-600 dark:text-gray-400">ประเภท</label>
+            <label htmlFor={fieldId("category")} className="text-sm text-gray-600 dark:text-gray-400">
+              ประเภท
+            </label>
             <select
+              id={fieldId("category")}
               value={formData.category}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, category: e.target.value as ItemCategory }))
-              }
-              className="w-full mt-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
+              onChange={(e) => {
+                setFormData((p) => ({ ...p, category: e.target.value as ItemCategory }));
+                if (errors.category) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.category;
+                    return next;
+                  });
+                }
+              }}
+              aria-invalid={errors.category ? true : undefined}
+              aria-describedby={errors.category ? fieldErrorId("category") : undefined}
+              className={cn("w-full mt-1 input-line", inputStateClass(errors.category))}
             >
               <option value="">เลือกประเภท</option>
               {categories.map((c) => (
@@ -315,7 +354,7 @@ export default function NfcRegisterPage() {
                 </option>
               ))}
             </select>
-            {errors.category && <p className="text-red-500 text-sm mt-1">{errors.category}</p>}
+            <FieldValidationMessage id={fieldErrorId("category")} message={errors.category} />
           </div>
 
           <div>
@@ -328,7 +367,7 @@ export default function NfcRegisterPage() {
             />
           </div>
 
-          <div>
+          <div id={fieldId("contacts")}>
             <label className="text-sm text-gray-600 dark:text-gray-400">ช่องทางติดต่อ</label>
             {contacts.map((contact, index) => (
               <div key={index} className="flex gap-2 mt-2">
@@ -368,7 +407,7 @@ export default function NfcRegisterPage() {
                 <Plus className="w-4 h-4" /> เพิ่มช่องทาง
               </button>
             )}
-            {errors.contacts && <p className="text-red-500 text-sm mt-1">{errors.contacts}</p>}
+            <FieldValidationMessage id={fieldErrorId("contacts")} message={errors.contacts} />
           </div>
         </section>
 

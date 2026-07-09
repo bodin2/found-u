@@ -19,6 +19,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcFoundReported } from "@/lib/logger";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 function NfcFoundContent() {
   const router = useRouter();
@@ -164,7 +165,7 @@ function NfcFoundContent() {
           </div>
         )}
 
-        {error && <p className="text-center text-red-500 text-sm">{error}</p>}
+        {error && <StatusAlert variant="error" message={error} centered className="mt-2" />}
 
         {resolved && (
           <section className="space-y-4">
