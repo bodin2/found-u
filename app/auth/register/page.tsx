@@ -4,21 +4,43 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2, UserPlus } from "lucide-react";
-import { FormStepper, FormStepperActions } from "@/components/ui/form-stepper";
+import { FormStepper } from "@/components/ui/form-stepper";
 import { completeRegistration, lookupRegistration } from "@/lib/student-auth-api";
+import {
+  AUTH_VALIDATION_MESSAGES,
+  isValidStudentId,
+  validatePasswordPair,
+  validatePinPair,
+} from "@/lib/auth-validation";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { AUTH_COPY } from "@/lib/auth-copy";
+import { AuthCard, AuthCardHeader, AuthFooter, AuthShell } from "@/components/auth/auth-shell";
+import {
+  authFormStackClass,
+  authHintClass,
+  authInputClassName,
+  authLabelClass,
+  authLinkClass,
+  authMetaLabelClass,
+  authPrimaryButtonClass,
+  authProfileValueClass,
+  authSecondaryButtonClass,
+  authStickyActionsShellClass,
+  authDualActionGridClass,
+  authStickyScrollPadClass,
+  authTouchTextActionClass,
+} from "@/components/auth/auth-ui";
 import { FieldValidationMessage } from "@/components/ui/field-validation-message";
-import { inputStateClass } from "@/components/ui/validated-field";
 import { ValidationSummary } from "@/components/ui/validation-summary";
 import { StatusAlert } from "@/components/ui/status-alert";
 import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: "student-id", label: "เลขประจำตัว" },
-  { id: "confirm", label: "ยืนยันตัวตน" },
-  { id: "password", label: "รหัสผ่าน" },
-  { id: "pin", label: "ตั้ง PIN" },
+  { id: "student-id", label: AUTH_COPY.registerStepStudentId },
+  { id: "confirm", label: AUTH_COPY.registerStepConfirm },
+  { id: "password", label: AUTH_COPY.registerStepPassword },
+  { id: "pin", label: AUTH_COPY.registerStepPin },
 ] as const;
 
 export default function RegisterPage() {
@@ -41,8 +63,8 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleLookup = async () => {
-    if (studentId.length !== 5) {
-      setErrors({ studentId: "กรุณากรอกเลขประจำตัว 5 หลัก" });
+    if (!isValidStudentId(studentId)) {
+      setErrors({ studentId: AUTH_VALIDATION_MESSAGES.studentId });
       setFormError(null);
       return;
     }
@@ -53,18 +75,18 @@ export default function RegisterPage() {
       const result = await lookupRegistration(studentId);
       if (!result.found) {
         setErrors({
-          studentId: result.message || "ไม่พบข้อมูล กรุณาตรวจสอบเลขประจำตัวหรือติดต่อผู้ดูแลระบบ",
+          studentId: result.message || AUTH_COPY.studentIdNotFound,
         });
         return;
       }
       if (result.alreadyRegistered) {
         setErrors({
-          studentId: result.message || "บัญชีนี้สมัครแล้ว กรุณาเข้าสู่ระบบ",
+          studentId: result.message || AUTH_COPY.alreadyRegistered,
         });
         return;
       }
       if (!result.canRegister || !result.registrationToken) {
-        setFormError("ไม่สามารถสมัครสมาชิกได้ กรุณาติดต่อผู้ดูแลระบบ");
+        setFormError(AUTH_COPY.cannotRegister);
         return;
       }
       setProfile({
@@ -76,7 +98,7 @@ export default function RegisterPage() {
       setRegistrationToken(result.registrationToken);
       setStep(1);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "ค้นหาข้อมูลไม่สำเร็จ");
+      setFormError(err instanceof Error ? err.message : AUTH_COPY.lookupFailed);
     } finally {
       setSubmitting(false);
     }
@@ -90,15 +112,7 @@ export default function RegisterPage() {
       return;
     }
     if (step === 2) {
-      const next: Record<string, string> = {};
-      if (password.length < 8) {
-        next.password = "รหัสผ่านต้องยาวอย่างน้อย 8 ตัว";
-      } else if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-        next.password = "รหัสผ่านต้องมีตัวอักษรและตัวเลข";
-      }
-      if (password !== confirmPassword) {
-        next.confirmPassword = "รหัสผ่านไม่ตรงกัน";
-      }
+      const next = validatePasswordPair(password, confirmPassword);
       if (Object.keys(next).length > 0) {
         setErrors(next);
         return;
@@ -107,13 +121,7 @@ export default function RegisterPage() {
       return;
     }
     if (step === 3) {
-      const next: Record<string, string> = {};
-      if (!/^\d{6}$/.test(pin)) {
-        next.pin = "PIN ต้องเป็นตัวเลข 6 หลัก";
-      }
-      if (pin !== confirmPin) {
-        next.confirmPin = "PIN ไม่ตรงกัน";
-      }
+      const next = validatePinPair(pin, confirmPin);
       if (Object.keys(next).length > 0) {
         setErrors(next);
         return;
@@ -128,7 +136,7 @@ export default function RegisterPage() {
         });
         router.push("/home");
       } catch (err) {
-        setFormError(err instanceof Error ? err.message : "สมัครสมาชิกไม่สำเร็จ");
+        setFormError(err instanceof Error ? err.message : AUTH_COPY.registerFailed);
       } finally {
         setSubmitting(false);
       }
@@ -146,265 +154,283 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-secondary flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-bg-primary rounded-2xl border border-border-light p-6 shadow-card">
-        <UserPlus className="w-10 h-10 text-line-green mb-4" />
-        <h1 className="text-xl font-bold text-text-primary mb-1">เริ่มใช้งาน</h1>
-        <p className="text-sm text-text-secondary mb-6">สมัครสมาชิกเพื่อใช้งานระบบ Found-U</p>
+    <AuthShell subtitle={AUTH_COPY.registerSubtitle}>
+      <AuthCard className={step > 0 ? authStickyScrollPadClass : undefined}>
+        <AuthCardHeader
+          icon={<UserPlus />}
+          title={AUTH_COPY.registerTitle}
+          description={AUTH_COPY.registerDescription}
+        />
 
-        <FormStepper steps={[...STEPS]} currentStep={step} className="mb-6" />
+        <FormStepper steps={[...STEPS]} currentStep={step} tone="quiet" className="mb-5" />
 
-        {step === 0 && (
-          <div className="space-y-4">
-            <ValidationSummary issues={recordToIssues(errors)} />
-            <div>
-              <label htmlFor={fieldId("studentId")} className="block text-sm font-medium mb-1">
-                เลขประจำตัว (5 หลัก)
-              </label>
-              <input
-                id={fieldId("studentId")}
-                type="text"
-                inputMode="numeric"
-                maxLength={5}
-                value={studentId}
-                onChange={(e) => {
-                  setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5));
-                  if (errors.studentId) {
-                    setErrors((prev) => {
-                      const next = { ...prev };
-                      delete next.studentId;
-                      return next;
-                    });
-                  }
-                }}
-                aria-invalid={errors.studentId ? true : undefined}
-                aria-describedby={errors.studentId ? fieldErrorId("studentId") : undefined}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border border-border-light font-mono text-lg tracking-widest",
-                  inputStateClass(errors.studentId)
-                )}
-                placeholder="12345"
-                autoFocus
-              />
-              <FieldValidationMessage
-                id={fieldErrorId("studentId")}
-                message={errors.studentId}
-              />
-            </div>
-            <p className="text-xs text-text-tertiary">
-              กรอกเลขประจำตัวนักเรียนตามที่โรงเรียนแจ้ง ระบบจะแสดงชื่อและห้องให้ตรวจสอบ
-            </p>
-          </div>
-        )}
-
-        {step === 1 && profile && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-border-light bg-bg-secondary p-4 space-y-3">
-              <p className="text-sm text-text-secondary">ข้อมูลของคุณในระบบ</p>
+        <div className={authFormStackClass}>
+          {step === 0 ? (
+            <>
+              <ValidationSummary issues={recordToIssues(errors)} />
               <div>
-                <p className="text-xs text-text-tertiary">ชื่อ-นามสกุล</p>
-                <p className="font-semibold text-text-primary">
-                  {profile.firstName} {profile.lastName}
-                </p>
+                <label htmlFor={fieldId("studentId")} className={authLabelClass}>
+                  {AUTH_COPY.studentIdField}
+                </label>
+                <input
+                  id={fieldId("studentId")}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
+                  value={studentId}
+                  onChange={(e) => {
+                    setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5));
+                    if (errors.studentId) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.studentId;
+                        return next;
+                      });
+                    }
+                  }}
+                  aria-invalid={errors.studentId ? true : undefined}
+                  aria-describedby={errors.studentId ? fieldErrorId("studentId") : undefined}
+                  className={authInputClassName("studentId", errors.studentId)}
+                  placeholder="12345"
+                  autoFocus
+                />
+                <FieldValidationMessage
+                  id={fieldErrorId("studentId")}
+                  message={errors.studentId}
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <p className={authHintClass}>{AUTH_COPY.registerStudentIdHint}</p>
+            </>
+          ) : null}
+
+          {step === 1 && profile ? (
+            <>
+              <p className="text-sm font-medium text-text-primary">{AUTH_COPY.profilePanelTitle}</p>
+              <dl className="grid gap-3">
                 <div>
-                  <p className="text-xs text-text-tertiary">ระดับชั้น</p>
-                  <p className="font-medium text-text-primary">{profile.gradeLevel || "—"}</p>
+                  <dt className={authMetaLabelClass}>{AUTH_COPY.fullNameLabel}</dt>
+                  <dd className={authProfileValueClass}>
+                    {profile.firstName} {profile.lastName}
+                  </dd>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <dt className={authMetaLabelClass}>{AUTH_COPY.gradeLevelLabel}</dt>
+                    <dd className={authProfileValueClass}>{profile.gradeLevel || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className={authMetaLabelClass}>{AUTH_COPY.roomLabel}</dt>
+                    <dd className={authProfileValueClass}>{profile.roomNumber || "—"}</dd>
+                  </div>
                 </div>
                 <div>
-                  <p className="text-xs text-text-tertiary">ห้อง</p>
-                  <p className="font-medium text-text-primary">{profile.roomNumber || "—"}</p>
+                  <dt className="sr-only">{AUTH_COPY.studentIdMetaPrefix}</dt>
+                  <dd className={`${authMetaLabelClass} font-mono`}>
+                    {AUTH_COPY.studentIdMetaPrefix}: {studentId}
+                  </dd>
                 </div>
+              </dl>
+              <p className={authHintClass}>{AUTH_COPY.profileMismatchHint}</p>
+            </>
+          ) : null}
+
+          {step === 2 ? (
+            <>
+              <ValidationSummary issues={recordToIssues(errors)} />
+              <div>
+                <label htmlFor={fieldId("password")} className={authLabelClass}>
+                  {AUTH_COPY.passwordField}
+                </label>
+                <input
+                  id={fieldId("password")}
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.password;
+                        return next;
+                      });
+                    }
+                  }}
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={errors.password ? fieldErrorId("password") : undefined}
+                  className={authInputClassName("default", errors.password)}
+                  minLength={8}
+                  autoFocus
+                />
+                <FieldValidationMessage id={fieldErrorId("password")} message={errors.password} />
+                <p className={`${authHintClass} mt-1`}>{AUTH_COPY.passwordRules}</p>
               </div>
-              <p className="text-xs text-text-tertiary font-mono">เลขประจำตัว: {studentId}</p>
-            </div>
-            <p className="text-sm text-text-secondary">
-              หากข้อมูลไม่ตรงกับตัวคุณ กรุณาตรวจสอบเลขประจำตัวแล้วแก้ไข
-            </p>
-          </div>
-        )}
+              <div>
+                <label htmlFor={fieldId("confirmPassword")} className={authLabelClass}>
+                  {AUTH_COPY.confirmPasswordField}
+                </label>
+                <input
+                  id={fieldId("confirmPassword")}
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (errors.confirmPassword) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.confirmPassword;
+                        return next;
+                      });
+                    }
+                  }}
+                  aria-invalid={errors.confirmPassword ? true : undefined}
+                  aria-describedby={
+                    errors.confirmPassword ? fieldErrorId("confirmPassword") : undefined
+                  }
+                  className={authInputClassName("default", errors.confirmPassword)}
+                />
+                <FieldValidationMessage
+                  id={fieldErrorId("confirmPassword")}
+                  message={errors.confirmPassword}
+                />
+              </div>
+            </>
+          ) : null}
 
-        {step === 2 && (
-          <div className="space-y-4">
-            <ValidationSummary issues={recordToIssues(errors)} />
-            <div>
-              <label htmlFor={fieldId("password")} className="block text-sm font-medium mb-1">
-                รหัสผ่าน
-              </label>
-              <input
-                id={fieldId("password")}
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) {
-                    setErrors((prev) => {
-                      const next = { ...prev };
-                      delete next.password;
-                      return next;
-                    });
-                  }
-                }}
-                aria-invalid={errors.password ? true : undefined}
-                aria-describedby={errors.password ? fieldErrorId("password") : undefined}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border border-border-light",
-                  inputStateClass(errors.password)
-                )}
-                minLength={8}
-                autoFocus
-              />
-              <FieldValidationMessage id={fieldErrorId("password")} message={errors.password} />
-              <p className="text-xs text-text-tertiary mt-1">อย่างน้อย 8 ตัว มีตัวอักษรและตัวเลข</p>
-            </div>
-            <div>
-              <label htmlFor={fieldId("confirmPassword")} className="block text-sm font-medium mb-1">
-                ยืนยันรหัสผ่าน
-              </label>
-              <input
-                id={fieldId("confirmPassword")}
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value);
-                  if (errors.confirmPassword) {
-                    setErrors((prev) => {
-                      const next = { ...prev };
-                      delete next.confirmPassword;
-                      return next;
-                    });
-                  }
-                }}
-                aria-invalid={errors.confirmPassword ? true : undefined}
-                aria-describedby={errors.confirmPassword ? fieldErrorId("confirmPassword") : undefined}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border border-border-light",
-                  inputStateClass(errors.confirmPassword)
-                )}
-              />
-              <FieldValidationMessage
-                id={fieldErrorId("confirmPassword")}
-                message={errors.confirmPassword}
-              />
-            </div>
-          </div>
-        )}
+          {step === 3 ? (
+            <>
+              <ValidationSummary issues={recordToIssues(errors)} />
+              <div>
+                <label htmlFor={fieldId("pin")} className={authLabelClass}>
+                  {AUTH_COPY.pinField}
+                </label>
+                <input
+                  id={fieldId("pin")}
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={pin}
+                  onChange={(e) => {
+                    setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    if (errors.pin) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.pin;
+                        return next;
+                      });
+                    }
+                  }}
+                  aria-invalid={errors.pin ? true : undefined}
+                  aria-describedby={errors.pin ? fieldErrorId("pin") : undefined}
+                  className={authInputClassName("pin", errors.pin)}
+                  placeholder="••••••"
+                  autoFocus
+                />
+                <FieldValidationMessage id={fieldErrorId("pin")} message={errors.pin} />
+                <p className={`${authHintClass} mt-1`}>{AUTH_COPY.pinQuickUnlock}</p>
+              </div>
+              <div>
+                <label htmlFor={fieldId("confirmPin")} className={authLabelClass}>
+                  {AUTH_COPY.confirmPinField}
+                </label>
+                <input
+                  id={fieldId("confirmPin")}
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={confirmPin}
+                  onChange={(e) => {
+                    setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    if (errors.confirmPin) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.confirmPin;
+                        return next;
+                      });
+                    }
+                  }}
+                  aria-invalid={errors.confirmPin ? true : undefined}
+                  aria-describedby={errors.confirmPin ? fieldErrorId("confirmPin") : undefined}
+                  className={authInputClassName("pin", errors.confirmPin)}
+                  placeholder="••••••"
+                />
+                <FieldValidationMessage
+                  id={fieldErrorId("confirmPin")}
+                  message={errors.confirmPin}
+                />
+              </div>
+            </>
+          ) : null}
 
-        {step === 3 && (
-          <div className="space-y-4">
-            <ValidationSummary issues={recordToIssues(errors)} />
-            <div>
-              <label htmlFor={fieldId("pin")} className="block text-sm font-medium mb-1">
-                PIN 6 หลัก
-              </label>
-              <input
-                id={fieldId("pin")}
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                value={pin}
-                onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
-                  if (errors.pin) {
-                    setErrors((prev) => {
-                      const next = { ...prev };
-                      delete next.pin;
-                      return next;
-                    });
-                  }
-                }}
-                aria-invalid={errors.pin ? true : undefined}
-                aria-describedby={errors.pin ? fieldErrorId("pin") : undefined}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border border-border-light font-mono text-2xl tracking-[0.5em] text-center",
-                  inputStateClass(errors.pin)
-                )}
-                placeholder="••••••"
-                autoFocus
-              />
-              <FieldValidationMessage id={fieldErrorId("pin")} message={errors.pin} />
-              <p className="text-xs text-text-tertiary mt-1">ใช้เข้าสู่ระบบอย่างรวดเร็วบนอุปกรณ์นี้</p>
-            </div>
-            <div>
-              <label htmlFor={fieldId("confirmPin")} className="block text-sm font-medium mb-1">
-                ยืนยัน PIN
-              </label>
-              <input
-                id={fieldId("confirmPin")}
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                value={confirmPin}
-                onChange={(e) => {
-                  setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6));
-                  if (errors.confirmPin) {
-                    setErrors((prev) => {
-                      const next = { ...prev };
-                      delete next.confirmPin;
-                      return next;
-                    });
-                  }
-                }}
-                aria-invalid={errors.confirmPin ? true : undefined}
-                aria-describedby={errors.confirmPin ? fieldErrorId("confirmPin") : undefined}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border border-border-light font-mono text-2xl tracking-[0.5em] text-center",
-                  inputStateClass(errors.confirmPin)
-                )}
-                placeholder="••••••"
-              />
-              <FieldValidationMessage id={fieldErrorId("confirmPin")} message={errors.confirmPin} />
-            </div>
-          </div>
-        )}
-
-        {formError && <StatusAlert variant="error" message={formError} className="mt-4" />}
+          {formError ? <StatusAlert variant="error" message={formError} /> : null}
+        </div>
 
         {step === 0 ? (
           <button
             type="button"
             onClick={handleLookup}
-            disabled={submitting || studentId.length !== 5}
-            className="w-full mt-6 py-3 bg-line-green text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            disabled={submitting || !isValidStudentId(studentId)}
+            aria-busy={submitting}
+            className={cn(authPrimaryButtonClass, "mt-6")}
           >
             {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-            ถัดไป
+            {AUTH_COPY.searchStudent}
           </button>
         ) : (
-          <FormStepperActions
-            currentStep={step}
-            totalSteps={STEPS.length}
-            onBack={handleBack}
-            onNext={step < 3 ? handleNext : undefined}
-            onSubmit={step === 3 ? handleNext : undefined}
-            isSubmitting={submitting}
-            nextLabel={step === 1 ? "ถูกต้อง ดำเนินการต่อ" : "ถัดไป"}
-            submitLabel="เริ่มใช้งาน"
-            className="mt-6"
-          />
+          <div className={authStickyActionsShellClass}>
+            <div className={authDualActionGridClass}>
+              <button
+                type="button"
+                onClick={handleBack}
+                disabled={submitting}
+                aria-busy={submitting}
+                className={authSecondaryButtonClass}
+              >
+                {AUTH_COPY.backStep}
+              </button>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={submitting}
+                aria-busy={submitting}
+                className={authPrimaryButtonClass}
+              >
+                {submitting && step === 3 ? (
+                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
+                ) : null}
+                {step === 3
+                  ? AUTH_COPY.startUsing
+                  : step === 1
+                    ? AUTH_COPY.confirmProfile
+                    : AUTH_COPY.nextStep}
+              </button>
+            </div>
+            {step === 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setStep(0);
+                  setProfile(null);
+                  setRegistrationToken("");
+                  setErrors({});
+                  setFormError(null);
+                }}
+                className={cn(authTouchTextActionClass, "w-full justify-center mt-3")}
+              >
+                {AUTH_COPY.notMeEditId}
+              </button>
+            ) : null}
+          </div>
         )}
 
-        {step === 1 && (
-          <button
-            type="button"
-            onClick={() => {
-              setStep(0);
-              setProfile(null);
-              setRegistrationToken("");
-              setErrors({});
-              setFormError(null);
-            }}
-            className="w-full mt-3 text-sm text-text-secondary hover:text-text-primary"
-          >
-            ไม่ใช่ฉัน — แก้ไขเลขประจำตัว
-          </button>
-        )}
+      </AuthCard>
 
-        <Link href={AUTH_ROUTES.login} className="block text-center text-sm text-line-green mt-4 hover:underline">
-          มีบัญชีแล้ว? เข้าสู่ระบบ
-        </Link>
-      </div>
-    </div>
+      {step === 0 ? (
+        <AuthFooter>
+          <Link href={AUTH_ROUTES.login} className={authLinkClass}>
+            {AUTH_COPY.hasAccountSignIn}
+          </Link>
+        </AuthFooter>
+      ) : null}
+    </AuthShell>
   );
 }

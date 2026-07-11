@@ -423,7 +423,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-scale-up,
-  .animate-pulse-green {
+  .animate-pulse-green,
+  .animate-spin {
     animation: none;
   }
 

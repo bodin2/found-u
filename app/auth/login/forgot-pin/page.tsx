@@ -4,12 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Fingerprint, KeyRound, Loader2, Shield } from "lucide-react";
-import {
-  postPasskeyLogin,
-  postStudentLogin,
-} from "@/lib/student-auth-api";
+import { postPasskeyLogin, postStudentLogin } from "@/lib/student-auth-api";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { AUTH_COPY } from "@/lib/auth-copy";
+import { AUTH_VALIDATION_MESSAGES, isValidStudentId } from "@/lib/auth-validation";
+import { AuthCard, AuthCardHeader, AuthFooter, AuthShell } from "@/components/auth/auth-shell";
+import {
+  authDividerSectionClass,
+  authFieldStackClass,
+  authHintClass,
+  authInputClassName,
+  authLabelClass,
+  authLinkClass,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+} from "@/components/auth/auth-ui";
 import { StatusAlert } from "@/components/ui/status-alert";
+import { fieldId } from "@/lib/feedback/types";
 
 export default function ForgotPinPage() {
   const router = useRouter();
@@ -20,6 +31,10 @@ export default function ForgotPinPage() {
 
   const handlePasswordRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidStudentId(studentId)) {
+      setError(AUTH_VALIDATION_MESSAGES.studentId);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -27,7 +42,7 @@ export default function ForgotPinPage() {
       router.push(`${AUTH_ROUTES.setupPin}?reset=1`);
       void result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ยืนยันตัวตนไม่สำเร็จ");
+      setError(err instanceof Error ? err.message : AUTH_COPY.verificationFailed);
     } finally {
       setSubmitting(false);
     }
@@ -40,76 +55,92 @@ export default function ForgotPinPage() {
       await postPasskeyLogin();
       router.push(`${AUTH_ROUTES.setupPin}?reset=1`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");
+      setError(err instanceof Error ? err.message : AUTH_COPY.passkeyFailed);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-bg-secondary flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-bg-primary rounded-2xl border border-border-light p-6 shadow-card">
-        <Shield className="w-10 h-10 text-line-green mb-4" />
-        <h1 className="text-xl font-bold text-text-primary mb-2">ลืม PIN</h1>
-        <p className="text-sm text-text-secondary mb-6">
-          ยืนยันตัวตนด้วยวิธีใดวิธีหนึ่งด้านล่าง แล้วตั้ง PIN ใหม่
-        </p>
+    <AuthShell subtitle="ลืม PIN">
+      <AuthCard>
+        <AuthCardHeader
+          icon={<Shield />}
+          title={AUTH_COPY.forgotPinTitle}
+          description={AUTH_COPY.forgotPinDescription}
+        />
 
-        <form onSubmit={handlePasswordRecovery} className="space-y-3 mb-4">
+        <form onSubmit={handlePasswordRecovery} className={authFieldStackClass} noValidate>
           <div>
-            <label className="block text-sm font-medium mb-1">เลขประจำตัว (5 หลัก)</label>
+            <label htmlFor={fieldId("studentId")} className={authLabelClass}>
+              {AUTH_COPY.studentIdField}
+            </label>
             <input
+              id={fieldId("studentId")}
               type="text"
               inputMode="numeric"
               maxLength={5}
               value={studentId}
               onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              className="w-full px-4 py-2.5 rounded-xl border border-border-light font-mono tracking-widest"
+              className={authInputClassName("studentId")}
+              autoComplete="username"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">รหัสผ่านระบบ</label>
+            <label htmlFor={fieldId("password")} className={authLabelClass}>
+              {AUTH_COPY.passwordField}
+            </label>
             <input
+              id={fieldId("password")}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-border-light"
+              className={authInputClassName("default")}
+              autoComplete="current-password"
               required
             />
           </div>
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 bg-line-green text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            aria-busy={submitting}
+            className={authPrimaryButtonClass}
           >
-            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <KeyRound className="w-5 h-5" />}
-            ยืนยันด้วยรหัสผ่าน
+            {submitting ? (
+              <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
+            ) : (
+              <KeyRound className="w-5 h-5" aria-hidden />
+            )}
+            {AUTH_COPY.verifyWithPassword}
           </button>
         </form>
 
-        <div className="space-y-2">
+        <div className={authDividerSectionClass}>
           <button
             type="button"
             onClick={handlePasskeyRecovery}
             disabled={submitting}
-            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-border-light font-medium hover:bg-bg-secondary disabled:opacity-50"
+            aria-busy={submitting}
+            className={authSecondaryButtonClass}
           >
-            <Fingerprint className="w-5 h-5" />
-            ยืนยันด้วย PassKey
+            <Fingerprint className="w-5 h-5" aria-hidden />
+            {AUTH_COPY.verifyWithPasskey}
           </button>
         </div>
 
-        {error && <StatusAlert variant="error" message={error} className="mt-3" />}
+        {error ? <StatusAlert variant="error" message={error} className="mt-4" /> : null}
 
-        <p className="mt-4 text-xs text-text-tertiary text-center">
-          หากลืมทั้งรหัสผ่านและ PIN กรุณาติดต่อผู้ดูแลระบบหรือ Support
+        <p className={`mt-6 text-center ${authHintClass}`}>
+          {AUTH_COPY.forgotBothCredentials} {AUTH_COPY.forgotBothHelp}
         </p>
 
-        <Link href={AUTH_ROUTES.login} className="block text-center text-sm text-line-green mt-4 hover:underline">
-          กลับหน้าเข้าสู่ระบบ
-        </Link>
-      </div>
-    </div>
+        <AuthFooter>
+          <Link href={AUTH_ROUTES.login} className={authLinkClass}>
+            {AUTH_COPY.backToSignIn}
+          </Link>
+        </AuthFooter>
+      </AuthCard>
+    </AuthShell>
   );
 }

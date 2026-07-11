@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { m } from "framer-motion";
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, Fingerprint, Shield, UserRound } from "lucide-react";
 import {
@@ -15,39 +14,42 @@ import {
   getRememberedDevice,
   setRememberedDevice,
 } from "@/lib/auth-device-memory";
-import { MotionProvider } from "@/components/motion/motion-provider";
-import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { slideUp } from "@/lib/motion";
-import { AuthPageHeader } from "@/components/auth/auth-page-header";
+import { AuthCard, AuthCardHeader, AuthShell } from "@/components/auth/auth-shell";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { AUTH_COPY } from "@/lib/auth-copy";
 import { captureReturnToFromQuery, consumeReturnTo } from "@/lib/auth-return-to";
 import { StatusAlert } from "@/components/ui/status-alert";
+import { AuthLoadingScreen } from "@/components/auth/auth-loading-screen";
+import {
+  authAvatarRingClass,
+  authDividerSectionClass,
+  authFieldStackClass,
+  authFormStackClass,
+  authInputClassName,
+  authLabelClass,
+  authInlineActionRowClass,
+  authLinkClass,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+  authSuccessBannerClass,
+  authTouchTextActionClass,
+} from "@/components/auth/auth-ui";
+import { fieldErrorId, fieldId } from "@/lib/feedback/types";
+import { cn } from "@/lib/utils";
 
 type LoginView = "quick" | "full";
 
-const secondaryButtonClass =
-  "w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-border-light bg-bg-primary font-medium hover:bg-bg-secondary transition-colors disabled:opacity-50";
-
 export default function LoginPage() {
   return (
-    <MotionProvider>
-      <Suspense
-        fallback={
-          <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
-            <Loader2 className="w-10 h-10 animate-spin text-line-green" />
-          </div>
-        }
-      >
-        <LoginPageContent />
-      </Suspense>
-    </MotionProvider>
+    <Suspense fallback={<AuthLoadingScreen />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
 
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const reduced = useReducedMotion();
   const {
     user,
     loading,
@@ -134,7 +136,7 @@ function LoginPageContent() {
     if (oauthError && oauthError !== "auth") {
       setErrorMsg(decodeURIComponent(oauthError));
     } else if (oauthError === "auth") {
-      setErrorMsg("เข้าสู่ระบบไม่สำเร็จ");
+      setErrorMsg(AUTH_COPY.oauthSignInFailed);
     }
   }, [searchParams]);
 
@@ -196,7 +198,7 @@ function LoginPageContent() {
       navigateAfterLogin(result);
     } catch (err) {
       const loginErr = err as Error & { needsRegistration?: boolean };
-      setErrorMsg(loginErr.message || "เข้าสู่ระบบไม่สำเร็จ");
+      setErrorMsg(loginErr.message || AUTH_COPY.signInFailed);
       setNeedsRegistrationHint(Boolean(loginErr.needsRegistration));
     } finally {
       setSubmitting(false);
@@ -211,7 +213,7 @@ function LoginPageContent() {
       const result = await signInWithPin(rememberedId, pin);
       navigateAfterLogin(result);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "PIN ไม่ถูกต้อง");
+      setErrorMsg(err instanceof Error ? err.message : AUTH_COPY.pinIncorrect);
     } finally {
       setSubmitting(false);
     }
@@ -224,7 +226,7 @@ function LoginPageContent() {
       const result = await signInWithPasskey();
       navigateAfterLogin(result);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "PassKey ไม่สำเร็จ");
+      setErrorMsg(err instanceof Error ? err.message : AUTH_COPY.passkeyFailed);
     } finally {
       setSubmitting(false);
     }
@@ -255,206 +257,202 @@ function LoginPageContent() {
     !!user && (mustChangePassword || mustSetupPin || isStudentVerified || isAdmin);
 
   if (authPending || !viewReady || isRedirectingAfterLogin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-bg-secondary">
-        <Loader2 className="w-10 h-10 animate-spin text-line-green" />
-      </div>
-    );
+    return <AuthLoadingScreen message={AUTH_COPY.loadingAccount} />;
   }
 
   return (
-    <div className="min-h-screen bg-bg-secondary flex flex-col">
-      <AuthPageHeader
-        subtitle={view === "quick" ? "ยินดีต้อนรับกลับ" : "เข้าสู่ระบบนักเรียน"}
-      />
-
-      <main className="flex-1 max-w-md mx-auto w-full px-4 py-4 sm:py-6">
-        {searchParams.get("setup") === "done" ? (
-          <div className="mb-4 rounded-xl border border-line-green/30 bg-line-green/10 px-4 py-3 text-sm text-text-primary">
-            ตั้งค่าระบบเสร็จสิ้น — เข้าสู่ระบบด้วยเลขแอดมินที่สร้างไว้
+    <AuthShell
+      subtitle={view === "quick" ? "ยินดีต้อนรับกลับ" : "เข้าสู่ระบบนักเรียน"}
+      banner={
+        searchParams.get("setup") === "done" ? (
+          <div className={authSuccessBannerClass}>
+            {AUTH_COPY.setupCompleteBanner}
           </div>
-        ) : null}
-        <div className="bg-bg-primary rounded-2xl border border-border-light shadow-card p-5 sm:p-6">
-          {view === "quick" ? (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-full bg-line-green/10 flex items-center justify-center">
-                  <UserRound className="w-6 h-6 text-line-green" />
-                </div>
-                <div>
-                  <p className="text-sm text-text-tertiary">สวัสดี</p>
-                  <h2 className="text-lg font-bold text-text-primary">
-                    {rememberedName || `นักเรียน ${rememberedId}`}
-                  </h2>
-                  <p className="text-xs text-text-tertiary font-mono">{rememberedId}</p>
-                </div>
+        ) : undefined
+      }
+    >
+      <AuthCard>
+        {view === "quick" ? (
+          <>
+            <div className="flex items-center gap-3 mb-6">
+              <div className={authAvatarRingClass}>
+                <UserRound className="w-5 h-5" aria-hidden />
               </div>
+              <div className="min-w-0">
+                <p className="text-sm text-text-secondary">สวัสดี</p>
+                <h2 className="text-base font-semibold text-text-primary truncate">
+                  {rememberedName || `นักเรียน ${rememberedId}`}
+                </h2>
+                <p className="text-xs text-text-secondary font-mono">{rememberedId}</p>
+              </div>
+            </div>
 
-              <form onSubmit={handlePinLogin} className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    ใส่ PIN 6 หลัก
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    className="w-full px-4 py-3 rounded-xl border border-border-light bg-bg-primary font-mono text-2xl tracking-[0.5em] text-center"
-                    placeholder="••••••"
-                    autoFocus
-                    required
-                  />
-                </div>
-                <SubmitButton loading={submitting} label="เข้าสู่ระบบ" />
-              </form>
+            <form onSubmit={handlePinLogin} className={authFieldStackClass}>
+              <div>
+                <label htmlFor={fieldId("pin")} className={authLabelClass}>
+                  {AUTH_COPY.pinField}
+                </label>
+                <input
+                  id={fieldId("pin")}
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className={authInputClassName("pin")}
+                  placeholder="••••••"
+                  autoComplete="current-password"
+                  autoFocus
+                  required
+                />
+              </div>
+              <SubmitButton loading={submitting} label={AUTH_COPY.signIn} />
+            </form>
 
-              <div className="mt-4 space-y-2">
+            <div className={authDividerSectionClass}>
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={submitting}
+                className={authSecondaryButtonClass}
+              >
+                {submitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
+                ) : (
+                  <Fingerprint className="w-5 h-5 text-text-secondary" aria-hidden />
+                )}
+                {AUTH_COPY.signInWithPasskey}
+              </button>
+              <div className={authInlineActionRowClass}>
+                <Link
+                  href={AUTH_ROUTES.forgotPin}
+                  className={cn(authLinkClass, "min-h-11 inline-flex items-center")}
+                >
+                  {AUTH_COPY.forgotPin}
+                </Link>
+                <button
+                  type="button"
+                  onClick={switchToFullLogin}
+                  className={authTouchTextActionClass}
+                >
+                  {AUTH_COPY.signInWithPassword}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <AuthCardHeader
+              icon={<Shield />}
+              title={AUTH_COPY.signIn}
+              description={AUTH_COPY.signInDescription}
+            />
+
+            <form onSubmit={handlePasswordLogin} className={authFieldStackClass}>
+              <div>
+                <label htmlFor={fieldId("studentId")} className={authLabelClass}>
+                  {AUTH_COPY.studentIdField}
+                </label>
+                <input
+                  id={fieldId("studentId")}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
+                  value={studentId}
+                  onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  className={authInputClassName("studentId")}
+                  placeholder="12345"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor={fieldId("password")} className={authLabelClass}>
+                  {AUTH_COPY.passwordField}
+                </label>
+                <input
+                  id={fieldId("password")}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={authInputClassName("default")}
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+              <Link href={AUTH_ROUTES.resetPassword} className={`text-sm ${authLinkClass}`}>
+                {AUTH_COPY.forgotPassword}
+              </Link>
+              <SubmitButton loading={submitting} label={AUTH_COPY.signIn} />
+            </form>
+
+            {showSecondaryOnFull ? (
+              <div className={authDividerSectionClass}>
                 <button
                   type="button"
                   onClick={handlePasskeyLogin}
                   disabled={submitting}
-                  className={secondaryButtonClass}
+                  className={authSecondaryButtonClass}
                 >
-                  {submitting ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Fingerprint className="w-5 h-5 text-text-secondary" />
-                  )}
-                  เข้าด้วย PassKey
+                  <Fingerprint className="w-5 h-5 text-text-secondary" aria-hidden />
+                  {AUTH_COPY.signInWithPasskey}
                 </button>
-                <div className="flex justify-between text-sm pt-1">
-                  <Link href={AUTH_ROUTES.forgotPin} className="text-line-green hover:underline">
-                    ลืม PIN?
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={switchToFullLogin}
-                    className="text-text-secondary hover:text-text-primary"
-                  >
-                    เข้าด้วยวิธีอื่น
-                  </button>
-                </div>
               </div>
-            </>
-          ) : (
-            <>
-              <Shield className="w-7 h-7 text-line-green mb-2" />
-              <h2 className="text-xl font-bold text-text-primary mb-0.5">เข้าสู่ระบบ</h2>
-              <p className="text-sm text-text-secondary mb-4">
-                ใช้เลขประจำตัวและรหัสผ่าน หรือ Passkey
-              </p>
+            ) : null}
 
-              <m.form
-                onSubmit={handlePasswordLogin}
-                className="space-y-3"
-                initial={reduced ? false : slideUp.initial}
-                animate={slideUp.animate}
-                transition={slideUp.transition}
-              >
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    เลขประจำตัว (5 หลัก)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={5}
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary font-mono text-lg tracking-widest"
-                    placeholder="12345"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    รหัสผ่าน
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border-light bg-bg-primary"
-                    required
-                  />
-                </div>
-                <Link
-                  href={AUTH_ROUTES.resetPassword}
-                  className="text-sm text-line-green hover:underline block"
-                >
-                  ลืมรหัสผ่าน?
-                </Link>
-                <SubmitButton loading={submitting} label="เข้าสู่ระบบ" />
-              </m.form>
-
-              {showSecondaryOnFull && (
-                <div className="mt-4 space-y-2">
-                  <button
-                    type="button"
-                    onClick={handlePasskeyLogin}
-                    disabled={submitting}
-                    className={secondaryButtonClass}
-                  >
-                    <Fingerprint className="w-5 h-5 text-text-secondary" />
-                    เข้าสู่ระบบด้วย PassKey
-                  </button>
-                </div>
-              )}
-
-              {rememberedId && (
+            <div className={cn(authFormStackClass, "mt-6")}>
+              {rememberedId ? (
                 <button
                   type="button"
                   onClick={() => {
                     setView("quick");
                     setErrorMsg(null);
                   }}
-                  className="w-full mt-4 text-sm text-line-green hover:underline"
+                  className={`w-full text-sm ${authLinkClass}`}
                 >
-                  กลับไปหน้า PIN
+                  {AUTH_COPY.backToPinSignIn}
                 </button>
-              )}
+              ) : null}
 
-              {getRememberedDevice() && (
+              {getRememberedDevice() ? (
                 <button
                   type="button"
                   onClick={switchAccount}
-                  className="w-full mt-2 text-sm text-text-tertiary hover:text-text-secondary"
+                  className={cn(authTouchTextActionClass, "w-full justify-center")}
                 >
-                  ใช้บัญชีอื่น
+                  {AUTH_COPY.useOtherAccount}
                 </button>
-              )}
+              ) : null}
 
               <Link
                 href={AUTH_ROUTES.hub}
-                className="block w-full mt-3 text-sm text-center text-text-secondary hover:text-text-primary"
+                className={cn(authTouchTextActionClass, "w-full justify-center")}
               >
-                กลับ
+                {AUTH_COPY.backToHub}
               </Link>
 
-              <p className="text-sm text-center text-text-secondary mt-4">
-                ยังไม่ได้สมัคร?{" "}
-                <Link href={AUTH_ROUTES.register} className="text-line-green hover:underline">
-                  เริ่มใช้งาน
-                </Link>
-              </p>
-            </>
-          )}
+              {!needsRegistrationHint ? (
+                <p className="text-sm text-center text-text-secondary">
+                  {AUTH_COPY.noAccountRegister}{" "}
+                  <Link href={AUTH_ROUTES.register} className={authLinkClass}>
+                    สมัครสมาชิก
+                  </Link>
+                </p>
+              ) : null}
+            </div>
+          </>
+        )}
 
-          {errorMsg && (
-            <StatusAlert variant="error" message={errorMsg} className="mt-3" />
-          )}
-          {needsRegistrationHint && (
-            <p className="mt-2 text-sm text-center">
-              <Link href={AUTH_ROUTES.register} className="text-line-green hover:underline font-medium">
-                ยังไม่ได้สมัคร? เริ่มใช้งานที่นี่
-              </Link>
-            </p>
-          )}
-        </div>
-      </main>
-    </div>
+        {errorMsg ? <StatusAlert variant="error" message={errorMsg} className="mt-4" /> : null}
+        {needsRegistrationHint ? (
+          <p className="mt-4 text-sm text-center">
+            <Link href={AUTH_ROUTES.register} className={`${authLinkClass} font-medium`}>
+              {AUTH_COPY.noAccountRegisterLink}
+            </Link>
+          </p>
+        ) : null}
+      </AuthCard>
+    </AuthShell>
   );
 }
 
@@ -463,9 +461,10 @@ function SubmitButton({ loading, label }: { loading: boolean; label: string }) {
     <button
       type="submit"
       disabled={loading}
-      className="w-full py-3 bg-line-green text-white rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+      aria-busy={loading}
+      className={authPrimaryButtonClass}
     >
-      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+      {loading ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : null}
       {label}
     </button>
   );

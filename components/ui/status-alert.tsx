@@ -48,7 +48,7 @@ export function StatusAlert({
             <button
               type="button"
               onClick={action.onClick}
-              className="mt-2 text-sm font-medium text-line-green hover:text-line-green-hover underline underline-offset-2"
+              className="mt-2 text-sm font-medium text-line-green-link hover:text-line-green-link-hover underline underline-offset-2"
             >
               {action.label}
             </button>

@@ -2,33 +2,91 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { KeyRound, Loader2, RotateCcw } from "lucide-react";
 import { postResetPassword, postResetPasswordWithPin } from "@/lib/student-auth-api";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { AUTH_COPY } from "@/lib/auth-copy";
+import {
+  isValidPin,
+  isValidStudentId,
+  isValidNewPassword,
+  AUTH_VALIDATION_MESSAGES,
+} from "@/lib/auth-validation";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { ValidationSummary } from "@/components/ui/validation-summary";
 import { StatusAlert } from "@/components/ui/status-alert";
+import { cn } from "@/lib/utils";
+import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
+import { AuthCard, AuthCardHeader, AuthFooter, AuthShell } from "@/components/auth/auth-shell";
+import {
+  authFormStackClass,
+  authHintClass,
+  authInputClassName,
+  authLabelClass,
+  authLinkClass,
+  authPrimaryButtonClass,
+  authSegmentTrackClass,
+  authTabActiveClass,
+  authTabInactiveClass,
+} from "@/components/auth/auth-ui";
 
 type ResetMode = "pin" | "school";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const modeTabsId = useId();
   const [mode, setMode] = useState<ResetMode>("pin");
   const [studentId, setStudentId] = useState("");
   const [pin, setPin] = useState("");
   const [schoolPassword, setSchoolPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const clearFieldError = (name: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const validateForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!isValidStudentId(studentId)) {
+      errors.studentId = AUTH_VALIDATION_MESSAGES.studentId;
+    }
+    if (mode === "pin") {
+      if (!isValidPin(pin)) {
+        errors.pin = AUTH_VALIDATION_MESSAGES.pin;
+      }
+    } else if (!schoolPassword.trim()) {
+      errors.schoolPassword = AUTH_VALIDATION_MESSAGES.schoolPasswordRequired;
+    }
+    if (!isValidNewPassword(newPassword)) {
+      errors.newPassword = AUTH_VALIDATION_MESSAGES.passwordWeak;
+    }
+    if (newPassword !== confirmPassword) {
+      errors.confirmPassword = AUTH_VALIDATION_MESSAGES.passwordMismatch;
+    }
+    return errors;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      setError("รหัสผ่านใหม่ไม่ตรงกัน");
+    const nextErrors = validateForm();
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setFormError(null);
       return;
     }
     setSubmitting(true);
-    setError(null);
+    setFieldErrors({});
+    setFormError(null);
     try {
       if (mode === "pin") {
         const result = await postResetPasswordWithPin(studentId, pin, newPassword);
@@ -46,129 +104,226 @@ export default function ResetPasswordPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "รีเซ็ตไม่สำเร็จ");
+      setFormError(err instanceof Error ? err.message : AUTH_COPY.resetPasswordFailed);
     } finally {
       setSubmitting(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-bg-secondary flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-bg-primary rounded-2xl border border-border-light p-6 shadow-card">
-        <RotateCcw className="w-10 h-10 text-line-green mb-4" />
-        <h1 className="text-xl font-bold text-text-primary mb-2">รีเซ็ตรหัสผ่าน</h1>
-        <p className="text-sm text-text-secondary mb-4">
-          ยืนยันตัวตนด้วย PIN เพื่อตั้งรหัสผ่านใหม่
-        </p>
+  const switchMode = (next: ResetMode) => {
+    setMode(next);
+    setFieldErrors({});
+    setFormError(null);
+  };
 
-        <div className="flex gap-2 mb-6 p-1 bg-bg-secondary rounded-xl">
+  return (
+    <AuthShell subtitle={AUTH_COPY.resetPasswordTitle}>
+      <AuthCard>
+        <AuthCardHeader
+          icon={<RotateCcw />}
+          title={AUTH_COPY.resetPasswordTitle}
+          description={AUTH_COPY.resetPasswordDescription}
+        />
+
+        <div
+          id={modeTabsId}
+          role="tablist"
+          aria-label="วิธียืนยันตัวตน"
+          className={authSegmentTrackClass}
+        >
           <button
             type="button"
-            onClick={() => {
-              setMode("pin");
-              setError(null);
-            }}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-              mode === "pin" ? "bg-bg-primary text-line-green shadow-sm" : "text-text-secondary"
-            }`}
+            role="tab"
+            id={`${modeTabsId}-pin`}
+            aria-selected={mode === "pin"}
+            aria-controls={`${modeTabsId}-panel`}
+            onClick={() => switchMode("pin")}
+            className={cn(
+              "flex-1 min-h-11 py-2.5 px-1 text-xs sm:text-sm text-center leading-tight rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green-light touch-manipulation",
+              mode === "pin" ? authTabActiveClass : authTabInactiveClass
+            )}
           >
-            ใช้ PIN
+            {AUTH_COPY.tabVerifyPin}
           </button>
           <button
             type="button"
-            onClick={() => {
-              setMode("school");
-              setError(null);
-            }}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-              mode === "school" ? "bg-bg-primary text-line-green shadow-sm" : "text-text-secondary"
-            }`}
+            role="tab"
+            id={`${modeTabsId}-school`}
+            aria-selected={mode === "school"}
+            aria-controls={`${modeTabsId}-panel`}
+            onClick={() => switchMode("school")}
+            className={cn(
+              "flex-1 min-h-11 py-2.5 px-1 text-xs sm:text-sm text-center leading-tight rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green-light touch-manipulation",
+              mode === "school" ? authTabActiveClass : authTabInactiveClass
+            )}
           >
-            รหัสจากโรงเรียน
+            {AUTH_COPY.tabSchoolPassword}
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          id={`${modeTabsId}-panel`}
+          role="tabpanel"
+          aria-labelledby={mode === "pin" ? `${modeTabsId}-pin` : `${modeTabsId}-school`}
+          onSubmit={handleSubmit}
+          className={authFormStackClass}
+          noValidate
+        >
+          <ValidationSummary issues={recordToIssues(fieldErrors)} />
           <div>
-            <label className="block text-sm font-medium mb-1">เลขประจำตัว (5 หลัก)</label>
+            <label htmlFor={fieldId("studentId")} className={authLabelClass}>
+              {AUTH_COPY.studentIdField}
+            </label>
             <input
+              id={fieldId("studentId")}
               type="text"
               inputMode="numeric"
               maxLength={5}
               value={studentId}
-              onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              className="w-full px-4 py-3 rounded-xl border border-border-light font-mono tracking-widest"
+              onChange={(e) => {
+                setStudentId(e.target.value.replace(/\D/g, "").slice(0, 5));
+                clearFieldError("studentId");
+              }}
+              aria-invalid={fieldErrors.studentId ? true : undefined}
+              aria-describedby={fieldErrors.studentId ? fieldErrorId("studentId") : undefined}
+              className={authInputClassName("studentId", fieldErrors.studentId)}
+              autoComplete="username"
               required
+            />
+            <FieldValidationMessage
+              id={fieldErrorId("studentId")}
+              message={fieldErrors.studentId}
             />
           </div>
 
           {mode === "pin" ? (
             <div>
-              <label className="block text-sm font-medium mb-1">PIN 6 หลัก</label>
+              <label htmlFor={fieldId("pin")} className={authLabelClass}>
+                {AUTH_COPY.pinField}
+              </label>
               <input
+                id={fieldId("pin")}
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="w-full px-4 py-3 rounded-xl border border-border-light font-mono text-xl tracking-[0.4em] text-center"
+                onChange={(e) => {
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  clearFieldError("pin");
+                }}
+                aria-invalid={fieldErrors.pin ? true : undefined}
+                aria-describedby={fieldErrors.pin ? fieldErrorId("pin") : undefined}
+                className={authInputClassName("pinCompact", fieldErrors.pin)}
+                autoComplete="current-password"
                 required
               />
+              <FieldValidationMessage id={fieldErrorId("pin")} message={fieldErrors.pin} />
             </div>
           ) : (
             <div>
-              <label className="block text-sm font-medium mb-1">รหัสผ่านจากโรงเรียน (เดิม)</label>
+              <label htmlFor={fieldId("schoolPassword")} className={authLabelClass}>
+                {AUTH_COPY.schoolPasswordField}
+              </label>
               <input
+                id={fieldId("schoolPassword")}
                 type="password"
                 value={schoolPassword}
-                onChange={(e) => setSchoolPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-border-light"
+                onChange={(e) => {
+                  setSchoolPassword(e.target.value);
+                  clearFieldError("schoolPassword");
+                }}
+                aria-invalid={fieldErrors.schoolPassword ? true : undefined}
+                aria-describedby={
+                  fieldErrors.schoolPassword ? fieldErrorId("schoolPassword") : undefined
+                }
+                className={authInputClassName("default", fieldErrors.schoolPassword)}
+                autoComplete="current-password"
                 required
               />
-              <p className="text-xs text-text-tertiary mt-1">สำหรับบัญชีที่นำเข้าแบบเก่าพร้อมรหัสผ่านจากโรงเรียน</p>
+              <FieldValidationMessage
+                id={fieldErrorId("schoolPassword")}
+                message={fieldErrors.schoolPassword}
+              />
+              <p className={`${authHintClass} mt-1`}>{AUTH_COPY.schoolPasswordHint}</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1">รหัสผ่านใหม่</label>
+            <label htmlFor={fieldId("newPassword")} className={authLabelClass}>
+              {AUTH_COPY.newPasswordField}
+            </label>
             <input
+              id={fieldId("newPassword")}
               type="password"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-border-light"
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                clearFieldError("newPassword");
+              }}
+              aria-invalid={fieldErrors.newPassword ? true : undefined}
+              aria-describedby={fieldErrors.newPassword ? fieldErrorId("newPassword") : undefined}
+              className={authInputClassName("default", fieldErrors.newPassword)}
+              autoComplete="new-password"
               required
               minLength={8}
             />
+            <FieldValidationMessage
+              id={fieldErrorId("newPassword")}
+              message={fieldErrors.newPassword}
+            />
+            <p className={`${authHintClass} mt-1`}>{AUTH_COPY.passwordRules}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">ยืนยันรหัสผ่านใหม่</label>
+            <label htmlFor={fieldId("confirmPassword")} className={authLabelClass}>
+              {AUTH_COPY.confirmNewPasswordField}
+            </label>
             <input
+              id={fieldId("confirmPassword")}
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-border-light"
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                clearFieldError("confirmPassword");
+              }}
+              aria-invalid={fieldErrors.confirmPassword ? true : undefined}
+              aria-describedby={
+                fieldErrors.confirmPassword ? fieldErrorId("confirmPassword") : undefined
+              }
+              className={authInputClassName("default", fieldErrors.confirmPassword)}
+              autoComplete="new-password"
               required
             />
+            <FieldValidationMessage
+              id={fieldErrorId("confirmPassword")}
+              message={fieldErrors.confirmPassword}
+            />
           </div>
-          {error && <StatusAlert variant="error" message={error} />}
+          {formError && <StatusAlert variant="error" message={formError} />}
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 bg-line-green text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            aria-busy={submitting}
+            className={authPrimaryButtonClass}
           >
-            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <KeyRound className="w-5 h-5" />}
-            รีเซ็ตรหัสผ่าน
+            {submitting ? (
+              <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
+            ) : (
+              <KeyRound className="w-5 h-5" aria-hidden />
+            )}
+            {AUTH_COPY.saveNewPassword}
           </button>
         </form>
 
-        <p className="mt-4 text-xs text-text-tertiary text-center">
-          หากลืมทั้งรหัสผ่านและ PIN กรุณาติดต่อผู้ดูแลระบบหรือ Support
+        <p className={`mt-6 text-center ${authHintClass}`}>
+          {AUTH_COPY.forgotBothCredentials} {AUTH_COPY.forgotBothHelp}
         </p>
 
-        <Link href={AUTH_ROUTES.login} className="block text-center text-sm text-line-green mt-4 hover:underline">
-          กลับหน้าเข้าสู่ระบบ
-        </Link>
-      </div>
-    </div>
+        <AuthFooter>
+          <Link href={AUTH_ROUTES.login} className={authLinkClass}>
+            {AUTH_COPY.backToSignIn}
+          </Link>
+        </AuthFooter>
+      </AuthCard>
+    </AuthShell>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { AuthLoadingScreen } from "@/components/auth/auth-loading-screen";
+import { AUTH_COPY } from "@/lib/auth-copy";
 import { useAuth } from "@/contexts/auth-context";
 import { LoadingModal } from "@/components/ui/loading-modal";
 import { TutorialSystem } from "@/components/ui/tutorial-system";
@@ -18,16 +19,7 @@ import {
 import { isAuthOnlyRoute, isProtectedRoute, isPublicRoute } from "@/lib/route-access";
 
 function AuthBootstrapScreen() {
-  return (
-    <div
-      className="min-h-screen flex items-center justify-center bg-bg-secondary"
-      role="status"
-      aria-live="polite"
-      aria-label="กำลังโหลด"
-    >
-      <Loader2 className="w-10 h-10 animate-spin text-line-green" />
-    </div>
-  );
+  return <AuthLoadingScreen message={AUTH_COPY.loading} />;
 }
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {

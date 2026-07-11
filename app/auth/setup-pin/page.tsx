@@ -7,17 +7,24 @@ import { useAuth } from "@/contexts/auth-context";
 import { postSetupPin } from "@/lib/student-auth-api";
 import { setRememberedDevice } from "@/lib/auth-device-memory";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { AUTH_COPY } from "@/lib/auth-copy";
+import { validatePinPair } from "@/lib/auth-validation";
+import { AuthLoadingScreen } from "@/components/auth/auth-loading-screen";
+import { AuthCard, AuthCardHeader, AuthShell } from "@/components/auth/auth-shell";
+import {
+  authFormStackClass,
+  authInputClassName,
+  authLabelClass,
+  authPrimaryButtonClass,
+} from "@/components/auth/auth-ui";
+import { FieldValidationMessage } from "@/components/ui/field-validation-message";
+import { ValidationSummary } from "@/components/ui/validation-summary";
 import { StatusAlert } from "@/components/ui/status-alert";
+import { fieldErrorId, fieldId, recordToIssues } from "@/lib/feedback/types";
 
 export default function SetupPinPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-line-green" />
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthLoadingScreen />}>
       <SetupPinContent />
     </Suspense>
   );
@@ -30,7 +37,8 @@ function SetupPinContent() {
   const { user, loading, sessionReady, mustSetupPin, isAdmin, appUser, refreshSession } = useAuth();
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -43,19 +51,27 @@ function SetupPinContent() {
 
   const showSetupForm = (mustSetupPin || isReset) && sessionReady;
 
+  const clearFieldError = (name: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin !== confirmPin) {
-      setError("PIN ไม่ตรงกัน");
-      return;
-    }
-    if (!/^\d{6}$/.test(pin)) {
-      setError("PIN ต้องเป็นตัวเลข 6 หลัก");
+    const nextErrors = validatePinPair(pin, confirmPin);
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setFormError(null);
       return;
     }
 
     setSubmitting(true);
-    setError(null);
+    setFieldErrors({});
+    setFormError(null);
     try {
       await postSetupPin(pin);
       if (appUser?.studentId) {
@@ -66,71 +82,91 @@ function SetupPinContent() {
         });
       }
       await refreshSession();
-      // รอ state อัปเดต — useEffect ด้านบนจะพาไป /home เมื่อ mustSetupPin เป็น false
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ตั้ง PIN ไม่สำเร็จ");
+      setFormError(err instanceof Error ? err.message : AUTH_COPY.setupPinFailed);
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading || !user || !showSetupForm) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-line-green" />
-      </div>
-    );
+    return <AuthLoadingScreen message={AUTH_COPY.loading} />;
   }
 
   return (
-    <div className="min-h-screen bg-bg-secondary flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-bg-primary rounded-2xl border border-border-light p-6 shadow-card">
-        <Shield className="w-10 h-10 text-line-green mb-4" />
-        <h1 className="text-xl font-bold text-text-primary mb-2">
-          {isReset ? "ตั้ง PIN ใหม่" : "ตั้ง PIN สำหรับเข้าใช้งานครั้งถัดไป"}
-        </h1>
-        <p className="text-sm text-text-secondary mb-6">
-          ครั้งต่อไปเมื่อเปิดแอป คุณจะใช้ PIN 6 หลักเพื่อเข้าสู่ระบบได้ทันที เหมือนแอปธนาคาร
-        </p>
+    <AuthShell subtitle={isReset ? AUTH_COPY.setPinResetTitle : AUTH_COPY.setPinTitle}>
+      <AuthCard>
+        <AuthCardHeader
+          icon={<Shield />}
+          title={isReset ? AUTH_COPY.setPinResetTitle : AUTH_COPY.setPinTitle}
+          description={
+            isReset ? AUTH_COPY.setupPinResetDescription : AUTH_COPY.setupPinDescription
+          }
+        />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className={authFormStackClass} noValidate>
+          <ValidationSummary issues={recordToIssues(fieldErrors)} />
           <div>
-            <label className="block text-sm font-medium mb-1">PIN 6 หลัก</label>
+            <label htmlFor={fieldId("pin")} className={authLabelClass}>
+              {AUTH_COPY.pinField}
+            </label>
             <input
+              id={fieldId("pin")}
               type="password"
               inputMode="numeric"
               maxLength={6}
               value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="w-full px-4 py-3 rounded-xl border border-border-light bg-bg-secondary font-mono text-lg tracking-widest text-center"
+              onChange={(e) => {
+                setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                clearFieldError("pin");
+              }}
+              aria-invalid={fieldErrors.pin ? true : undefined}
+              aria-describedby={fieldErrors.pin ? fieldErrorId("pin") : undefined}
+              className={authInputClassName("pin", fieldErrors.pin)}
               required
               autoComplete="new-password"
             />
+            <FieldValidationMessage id={fieldErrorId("pin")} message={fieldErrors.pin} />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">ยืนยัน PIN</label>
+            <label htmlFor={fieldId("confirmPin")} className={authLabelClass}>
+              {AUTH_COPY.confirmPinField}
+            </label>
             <input
+              id={fieldId("confirmPin")}
               type="password"
               inputMode="numeric"
               maxLength={6}
               value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="w-full px-4 py-3 rounded-xl border border-border-light bg-bg-secondary font-mono text-lg tracking-widest text-center"
+              onChange={(e) => {
+                setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                clearFieldError("confirmPin");
+              }}
+              aria-invalid={fieldErrors.confirmPin ? true : undefined}
+              aria-describedby={
+                fieldErrors.confirmPin ? fieldErrorId("confirmPin") : undefined
+              }
+              className={authInputClassName("pin", fieldErrors.confirmPin)}
               required
               autoComplete="new-password"
             />
+            <FieldValidationMessage
+              id={fieldErrorId("confirmPin")}
+              message={fieldErrors.confirmPin}
+            />
           </div>
-          {error && <StatusAlert variant="error" message={error} />}
+          {formError && <StatusAlert variant="error" message={formError} />}
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 bg-line-green text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            aria-busy={submitting}
+            className={authPrimaryButtonClass}
           >
-            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-            บันทึก PIN
+            {submitting ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : null}
+            {AUTH_COPY.savePin}
           </button>
         </form>
-      </div>
-    </div>
+      </AuthCard>
+    </AuthShell>
   );
 }

@@ -2,9 +2,24 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { GraduationCap } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  authCardClass,
+  authCardDescriptionClass,
+  authCardHeaderClass,
+  authCardTitleClass,
+  authFieldStackClass,
+  authIconWellClass,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+} from "@/components/auth/auth-ui";
+import { AUTH_COPY } from "@/lib/auth-copy";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
+import { cn } from "@/lib/utils";
 
 interface StudentRegistrationModalProps {
   open: boolean;
@@ -13,33 +28,65 @@ interface StudentRegistrationModalProps {
 export function StudentRegistrationModal({ open }: StudentRegistrationModalProps) {
   const router = useRouter();
   const { user } = useAuth();
+  const titleId = useId();
+  const descriptionId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  if (!open || !user) return null;
+  const isVisible = open && !!user;
+  useLockBodyScroll(isVisible);
 
-  return (
-    <div className="fixed inset-0 overlay-modal overlay-modal-top flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm z-[100]">
-      <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6">
-        <GraduationCap className="w-10 h-10 text-[#06C755] mx-auto mb-3" />
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white text-center">
-          ยืนยันบัญชีนักเรียน
-        </h2>
-        <p className="text-sm text-gray-500 text-center mt-2 mb-6">
-          บัญชีของคุณยังไม่ได้ยืนยัน กรุณาสมัครหรือเชื่อมบัญชีนักเรียนเพื่อใช้งานต่อ
-        </p>
-        <Link
-          href={AUTH_ROUTES.register}
-          className="block w-full py-3 bg-[#06C755] text-white rounded-xl font-semibold text-center hover:bg-[#05a847] transition-colors"
-        >
-          ไปหน้าสมัครสมาชิก
-        </Link>
-        <button
-          type="button"
-          onClick={() => router.replace(AUTH_ROUTES.login)}
-          className="w-full mt-3 py-3 rounded-xl border border-border-light font-medium text-text-secondary hover:bg-bg-secondary transition-colors"
-        >
-          เข้าสู่ระบบด้วยบัญชีอื่น
-        </button>
+  useEffect(() => {
+    if (isVisible && panelRef.current) {
+      panelRef.current.focus();
+    }
+  }, [isVisible]);
+
+  if (!isVisible || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="overlay-modal overlay-modal-top fixed inset-0 flex items-center justify-center bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className={cn(authCardClass, "w-full max-w-md outline-none")}
+      >
+        <header className={authCardHeaderClass}>
+          <div className="flex gap-3 items-start">
+            <div className={authIconWellClass} aria-hidden>
+              <GraduationCap />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <h2 id={titleId} className={authCardTitleClass}>
+                {AUTH_COPY.studentVerificationTitle}
+              </h2>
+              <p id={descriptionId} className={authCardDescriptionClass}>
+                {AUTH_COPY.studentVerificationDescription}
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <div className={authFieldStackClass}>
+          <Link href={AUTH_ROUTES.register} className={authPrimaryButtonClass}>
+            {AUTH_COPY.goToRegister}
+          </Link>
+          <button
+            type="button"
+            onClick={() => router.replace(AUTH_ROUTES.login)}
+            className={authSecondaryButtonClass}
+          >
+            {AUTH_COPY.signInWithOtherAccount}
+          </button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
