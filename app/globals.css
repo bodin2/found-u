@@ -17,6 +17,8 @@
 
   /* Text Colors */
   --text-primary: #191919;
+  /** Ink on fixed light surfaces (e.g. white pills on green headers) — same in dark theme */
+  --text-on-light: #191919;
   --text-secondary: #6B7280;
   --text-tertiary: #9CA3AF;
   --text-muted: #B4B4B4;
@@ -70,6 +72,7 @@
   --bg-card: #171717;
 
   --text-primary: #F9FAFB;
+  --text-on-light: #191919;
   --text-secondary: #9CA3AF;
   --text-tertiary: #6B7280;
   --text-muted: #4B5563;
@@ -119,11 +122,20 @@
   --color-bg-tertiary: var(--bg-tertiary);
   --color-bg-card: var(--bg-card);
   --color-text-primary: var(--text-primary);
+  --color-text-on-light: var(--text-on-light);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
   --color-text-muted: var(--text-muted);
   --color-border-light: var(--border-light);
   --color-border-medium: var(--border-medium);
+  --color-status-error: var(--status-error);
+  --color-status-error-light: var(--status-error-light);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-light: var(--status-warning-light);
+  --color-status-success: var(--status-success);
+  --color-status-success-light: var(--status-success-light);
+  --color-status-info: var(--status-info);
+  --color-status-info-light: var(--status-info-light);
   --font-sans: var(--font-kanit);
 }
 

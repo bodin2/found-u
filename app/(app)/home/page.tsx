@@ -8,7 +8,7 @@ import BottomNav from "@/components/layout/bottom-nav";
 import Sidebar from "@/components/layout/sidebar";
 import { ModeSwitcher } from "@/components/agent/mode-switcher";
 import { useAuth } from "@/contexts/auth-context";
-import { getUserPublicEmail, getUserShownName } from "@/lib/user-display";
+import { getUserShownName } from "@/lib/user-display";
 import { UserAvatar } from "@/components/user/user-avatar";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/use-mounted";
@@ -56,24 +56,28 @@ function HomeQuickMenu({ className }: { className?: string }) {
         .map((item) => {
           const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href}>
-              <div className="bg-bg-card rounded-xl p-4 border border-border-light hover:border-border-medium transition-colors duration-200 active:scale-[0.99]">
+            <Link
+              key={item.href}
+              href={item.href}
+              className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary"
+            >
+              <div className="bg-bg-card rounded-xl p-4 border border-border-light group-hover:border-border-medium transition-colors duration-200 motion-safe:group-active:scale-[0.99]">
                 <div className="flex items-center gap-4">
                   <div
                     className={cn(
-                      "w-14 h-14 rounded-2xl flex items-center justify-center",
+                      "w-12 h-12 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shrink-0",
                       item.color
                     )}
                   >
-                    <Icon className={cn("w-7 h-7", item.iconColor)} />
+                    <Icon className={cn("w-6 h-6 md:w-7 md:h-7", item.iconColor)} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-text-primary">
+                    <h3 className="text-base md:text-lg font-semibold text-text-primary">
                       {item.title}
                     </h3>
-                    <p className="text-sm text-text-secondary">{item.subtitle}</p>
+                    <p className="text-sm text-text-secondary line-clamp-1">{item.subtitle}</p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-text-tertiary shrink-0" />
+                  <ChevronRight className="w-5 h-5 text-text-tertiary shrink-0 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </div>
               </div>
             </Link>
@@ -125,17 +129,17 @@ export default function Home() {
       <Sidebar />
 
       <div className={cn("flex min-h-screen flex-1 flex-col main-with-bottom-nav", shellSidebarInset)}>
-        {/* Mobile header — switcher lives inside the green band (no separate bar above) */}
-        <header className="md:hidden bg-line-green text-white safe-top">
-          <div className="px-5 pt-4 pb-5 flex flex-col gap-4">
+        {/* Mobile header — switcher inside the green band */}
+        <header className="md:hidden bg-line-green text-white safe-top shrink-0">
+          <div className="px-5 pt-5 pb-4 flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                  <Package className="w-6 h-6 text-white" />
+                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                  <Package className="w-5 h-5 text-white" aria-hidden />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-white/85 text-sm">{greeting} 👋</p>
-                  <h1 className="text-white text-xl font-semibold min-h-[1.75rem] truncate text-balance">
+                  <p className="text-white/90 text-sm leading-snug">{greeting} 👋</p>
+                  <h1 className="text-white text-lg font-semibold min-h-[1.5rem] truncate text-balance leading-tight">
                     {authLoading && !user ? (
                       <span
                         className="inline-block h-5 w-28 rounded bg-white/20 animate-pulse align-middle"
@@ -150,7 +154,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
                   onClick={() => setTheme(isDarkTheme ? "light" : "dark")}
@@ -192,7 +196,7 @@ export default function Home() {
                     {showUserMenu && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                        <div className="absolute right-0 mt-2 w-56 bg-bg-card rounded-xl shadow-card z-50 overflow-hidden animate-fade-in">
+                        <div className="absolute right-0 mt-2 w-56 bg-bg-card text-text-primary rounded-xl shadow-card z-50 overflow-hidden animate-fade-in">
                           <div className="p-4 border-b border-border-light">
                             <p className="font-medium text-text-primary truncate">
                               {getUserShownName(appUser, user)}
@@ -200,7 +204,7 @@ export default function Home() {
                           </div>
                           <Link
                             href="/settings"
-                            className="flex items-center gap-3 px-4 py-3 text-text-primary hover:bg-bg-secondary"
+                            className="flex items-center gap-3 px-4 py-3 text-text-primary hover:bg-bg-secondary focus-visible:outline-none focus-visible:bg-bg-secondary"
                             onClick={() => setShowUserMenu(false)}
                           >
                             <Settings className="w-4 h-4" />
@@ -209,7 +213,7 @@ export default function Home() {
                           {isAdmin && (
                             <Link
                               href="/admin"
-                              className="flex items-center gap-3 px-4 py-3 text-text-primary hover:bg-bg-secondary"
+                              className="flex items-center gap-3 px-4 py-3 text-text-primary hover:bg-bg-secondary focus-visible:outline-none focus-visible:bg-bg-secondary"
                               onClick={() => setShowUserMenu(false)}
                             >
                               <User className="w-4 h-4" />
@@ -219,7 +223,7 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={handleLogout}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-status-error hover:bg-bg-secondary"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-status-error hover:bg-status-error-light focus-visible:outline-none focus-visible:bg-status-error-light"
                           >
                             <LogOut className="w-4 h-4" />
                             <span>ออกจากระบบ</span>
@@ -241,7 +245,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-2 pb-0.5">
               <ModeSwitcher variant="compact" tone="on-accent" />
               <p className="text-white/90 text-sm">ยินดีต้อนรับ!</p>
             </div>
@@ -249,31 +253,35 @@ export default function Home() {
         </header>
 
         {/* Desktop header */}
-        <header className="hidden md:block bg-bg-card border-b border-border-light sticky top-0 z-10">
-          <div className="px-8 xl:px-12 pt-5 pb-4">
-            <h1 className="text-2xl font-bold text-text-primary min-h-[2rem]">
-              {authLoading && !user ? (
-                <span
-                  className="inline-block h-7 w-48 max-w-full rounded bg-bg-tertiary animate-pulse align-middle"
-                  aria-hidden
-                />
-              ) : (
-                <>
-                  {greeting}
-                  <UserNameSlot user={user} welcomeName={welcomeName} />
-                </>
-              )}
-            </h1>
-            <p className="text-text-secondary text-sm mt-0.5">ยินดีต้อนรับ!</p>
+        <header className="hidden md:block bg-bg-card border-b border-border-light sticky top-0 z-20">
+          <div className="px-8 xl:px-12 py-6">
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0">
+                <p className="text-sm text-text-secondary mb-1">ยินดีต้อนรับ!</p>
+                <h1 className="text-2xl font-bold text-text-primary min-h-[2rem] text-balance leading-tight">
+                  {authLoading && !user ? (
+                    <span
+                      className="inline-block h-7 w-48 max-w-full rounded bg-bg-tertiary animate-pulse align-middle"
+                      aria-hidden
+                    />
+                  ) : (
+                    <>
+                      {greeting}
+                      <UserNameSlot user={user} welcomeName={welcomeName} />
+                    </>
+                  )}
+                </h1>
+              </div>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 bg-bg-secondary px-5 pt-5 pb-6 rounded-t-2xl -mt-2 md:mt-0 md:rounded-none md:px-8 md:pb-8 xl:px-12 xl:pb-12">
-          <HomeQuickMenu className="md:hidden" />
+        <main className="relative z-[1] flex-1 bg-bg-secondary px-5 pt-5 pb-6 rounded-t-2xl -mt-3 md:mt-0 md:rounded-none md:px-8 md:pt-8 md:pb-8 xl:px-12 xl:pb-12">
+          <HomeQuickMenu className="mb-6 md:mb-8" />
 
           <HomeDashboardSection
             {...dashboardProps}
-            className="md:mt-6"
+            className="mt-0 md:mt-0"
           />
         </main>
 
