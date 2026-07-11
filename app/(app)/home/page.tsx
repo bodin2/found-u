@@ -292,7 +292,7 @@ export default function Home() {
         </header>
 
         <main className="relative z-[1] flex-1 min-w-0 overflow-x-clip bg-bg-secondary px-5 pt-5 pb-6 rounded-t-2xl -mt-3 md:mt-0 md:rounded-none md:px-8 md:pt-8 md:pb-8 xl:px-12 xl:pb-12">
-          <HomeQuickMenu className="mb-6 md:mb-8" />
+          <HomeQuickMenu className="mb-6 md:hidden" />
 
           <HomeDashboardSection
             {...dashboardProps}
