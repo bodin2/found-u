@@ -11,7 +11,7 @@ import { isSetupPublicPath } from "@/lib/auth-routes";
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-bg-secondary transition-colors">
-      <div className="w-full min-h-screen bg-bg-primary transition-colors">{children}</div>
+      <div className="w-full bg-bg-primary transition-colors">{children}</div>
     </div>
   );
 }

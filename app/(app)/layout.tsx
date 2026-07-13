@@ -7,8 +7,6 @@ export default function AppRouteLayout({
   children: React.ReactNode;
 }) {
   return (
-    <MotionProvider>
-      <div className="min-h-screen">{children}</div>
-    </MotionProvider>
+    <MotionProvider>{children}</MotionProvider>
   );
 }

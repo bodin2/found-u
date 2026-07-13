@@ -172,7 +172,9 @@ function AgentChatInner() {
 export function AgentChatShell() {
   return (
     <ChatProvider>
-      <AgentChatInner />
+      <div className="flex flex-1 flex-col min-h-0 h-full overflow-hidden">
+        <AgentChatInner />
+      </div>
     </ChatProvider>
   );
 }

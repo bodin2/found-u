@@ -20,14 +20,19 @@ export function AssistantAppShell({
   mainClassName,
 }: AssistantAppShellProps) {
   return (
-    <div className={cn("min-h-screen bg-bg-secondary transition-colors", className)}>
-      <div className="assistant-desktop:hidden h-[100dvh] flex flex-col w-full min-w-0 overflow-hidden">
+    <div
+      className={cn(
+        "h-dvh max-h-dvh overflow-hidden bg-bg-secondary flex flex-col transition-colors",
+        className
+      )}
+    >
+      <div className="assistant-desktop:hidden flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden">
         {children}
       </div>
 
       <div
         className={cn(
-          "hidden assistant-desktop:flex h-screen w-full overflow-hidden min-h-0 min-w-0",
+          "hidden assistant-desktop:flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden",
           shellAssistantDesktopPadding,
           mainClassName
         )}

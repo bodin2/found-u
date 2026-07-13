@@ -134,10 +134,21 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-primary transition-colors shell-desktop:flex">
+    <div
+      className={cn(
+        "bg-bg-primary transition-colors",
+        "h-dvh max-h-dvh overflow-hidden flex flex-col",
+        "shell-desktop:h-auto shell-desktop:max-h-none shell-desktop:min-h-screen shell-desktop:overflow-visible shell-desktop:flex-row"
+      )}
+    >
       <Sidebar />
 
-      <div className={cn("flex min-h-screen flex-1 flex-col main-with-bottom-nav min-w-0", shellSidebarInset)}>
+      <div
+        className={cn(
+          "flex flex-1 flex-col min-h-0 min-w-0 main-with-bottom-nav",
+          shellSidebarInset
+        )}
+      >
         {/* Mobile header — switcher inside the green band */}
         <header className={cn(shellMobileOnly, "bg-line-green text-white safe-top shrink-0")}>
           <div className="px-5 pt-5 pb-4 flex flex-col gap-4">
@@ -291,7 +302,7 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="relative z-[1] flex-1 min-w-0 overflow-x-clip bg-bg-secondary px-5 pt-5 pb-6 rounded-t-2xl -mt-3 shell-desktop:mt-0 shell-desktop:rounded-none shell-desktop:px-8 shell-desktop:pt-8 shell-desktop:pb-8 xl:px-12 xl:pb-12">
+        <main className="relative z-[1] flex-1 min-h-0 overflow-y-auto overscroll-contain min-w-0 bg-bg-secondary px-5 pt-5 pb-6 rounded-t-2xl -mt-3 shell-desktop:mt-0 shell-desktop:rounded-none shell-desktop:px-8 shell-desktop:pt-8 shell-desktop:pb-8 xl:px-12 xl:pb-12">
           <HomeQuickMenu className={cn("mb-6", shellMobileOnly)} />
 
           <HomeDashboardSection
