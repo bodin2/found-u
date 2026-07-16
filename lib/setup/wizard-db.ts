@@ -186,7 +186,7 @@ export async function upsertAppSettingsOg(
       id: "default",
       settings: merged,
       updated_at: now,
-      updated_by: "setup-wizard",
+      updated_by: null,
     },
     { onConflict: "id" }
   );

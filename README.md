@@ -120,6 +120,30 @@ bun dev           # http://localhost:3000
 | `bun run gen:students` / `import:students` | สร้าง/นำเข้ารายชื่อนักเรียนจาก CSV |
 | `bun run test:login` | ทดสอบ flow ล็อกอินนักเรียน |
 
+### ทดสอบ Setup Wizard แบบ Sandbox (ไม่กระทบ `.env.local`)
+
+ใช้ **Supabase project แยก** สำหรับลอง wizard ซ้ำๆ โดยไม่ต้อง redeploy และไม่ต้องเปลี่ยน env หลักที่เชื่อม deploy อยู่แล้ว
+
+```bash
+# 1) สร้างโปรเจกต์ Supabase ฟรีอีกตัว (เช่น found-u-setup-sandbox)
+cp .env.setup.example .env.setup.local
+# แก้ .env.setup.local ใส่ URL / keys / POSTGRES ของ sandbox
+
+# 2) รีเซ็ตสถานะ wizard (ทำซ้ำได้ทุกครั้งหลังทดสอบ)
+bun run setup:reset
+
+# 3) รัน dev ด้วย sandbox env (override .env.local ชั่วคราว)
+bun run dev:setup
+# เปิด http://localhost:3000/setup
+```
+
+| คำสั่ง | ใช้ทำอะไร |
+|--------|-----------|
+| `bun run dev:setup` | `next dev` โดยโหลด `.env.setup.local` |
+| `bun run setup:reset` | รีเซ็ต `setup_status`, branding, AI config, แอดมินที่สร้างจาก wizard |
+
+DB ว่างครั้งแรก: เปิด `/setup` แล้ว hydrator จะรัน migration อัตโนมัติ (เหมือน production) — ไม่ต้อง `db:push` ถ้าใช้ sandbox ใหม่เปล่าๆ
+
 ## Deploy ให้โรงเรียนใหม่
 
 แนวทางที่แนะนำ: **Clone + Deploy ก่อน** ให้ใช้งานได้จริง แล้วค่อย **Fork** ทีหลังถ้าต้องการ sync อัปเดตจากโค้ดหลัก

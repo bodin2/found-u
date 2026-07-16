@@ -34,6 +34,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env.local
 .env
+.env.setup.local
 
 # Firebase Service Account Keys (NEVER commit these!)
 *-firebase-adminsdk-*.json

@@ -14,7 +14,9 @@
     "create:admin": "bun run scripts/create-admin.ts",
     "test:login": "bun run scripts/test-student-login.ts",
     "test": "bun test tests",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "dev:setup": "bun run scripts/dev-setup-sandbox.ts",
+    "setup:reset": "bun run scripts/reset-setup-sandbox.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.6",

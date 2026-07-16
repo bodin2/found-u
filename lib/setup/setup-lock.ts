@@ -43,15 +43,17 @@ export async function markSetupCompletedAtomic(
 
   try {
     const now = new Date().toISOString();
+    const configData = {
+      is_completed: true,
+      current_step: 3,
+      completed_at: now,
+      completed_by: completedBy,
+    };
+
     const rows = await sql<{ id: string }[]>`
       UPDATE public.system_config
       SET
-        config_data = jsonb_build_object(
-          'is_completed', true,
-          'current_step', 3,
-          'completed_at', ${now},
-          'completed_by', ${completedBy}
-        ),
+        config_data = ${sql.json(configData)},
         updated_at = ${now}
       WHERE id = 'setup_status'
         AND COALESCE((config_data->>'is_completed')::boolean, false) IS NOT TRUE
