@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       found: true,
       alreadyRegistered: true,
-      message: "บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ",
+      message: "คุณเคยสมัครสมาชิกไปแล้ว กรุณาเข้าสู่ระบบ",
     });
   }
 

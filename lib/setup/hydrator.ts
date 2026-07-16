@@ -3,12 +3,13 @@ import {
   LEGACY_SETUP_BACKFILL_SQL,
   RESET_FALSE_SETUP_WITHOUT_ADMIN_SQL,
 } from "@/lib/setup/backfill-sql";
+import { ensureAccountsTableWithSql } from "@/lib/setup/ensure-accounts-table";
+import { ensureStorageBucketsWithSql } from "@/lib/setup/ensure-storage-buckets";
 import { SETUP_ADVISORY_LOCK_ID } from "@/lib/setup/constants";
 import { resolvePostgresUrl } from "@/lib/setup/db-url";
-import { probeDatabaseState } from "@/lib/setup/probe";
+import { probeDatabaseState, tableExists } from "@/lib/setup/probe";
 import {
   loadAllMigrationSql,
-  loadStorageMigrationSql,
   loadSystemConfigMigrationSql,
 } from "@/lib/setup/schemas";
 
@@ -42,8 +43,9 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
     const state = await probeDatabaseState(sql);
 
     if (state.hasSystemConfig && state.hasLostItems) {
+      await ensureAccountsTableWithSql(sql);
       await backfillSetupStatusIfNeeded(sql);
-      await ensureStorageBuckets(sql);
+      await ensureStorageBucketsWithSql(sql);
       return { ok: true, mode: "skipped" };
     }
 
@@ -53,8 +55,9 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
         return { ok: false, reason: "no_migrations" };
       }
       await runSqlBatch(sql, systemConfigSql);
+      await ensureAccountsTableWithSql(sql);
       await backfillSetupStatusIfNeeded(sql);
-      await ensureStorageBuckets(sql);
+      await ensureStorageBucketsWithSql(sql);
       return { ok: true, mode: "system_config_only" };
     }
 
@@ -66,6 +69,9 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
     for (const migration of migrations) {
       await runSqlBatch(sql, migration.sql);
     }
+
+    await ensureAccountsTableWithSql(sql);
+    await ensureStorageBucketsWithSql(sql);
 
     return { ok: true, mode: "full" };
   } catch (error) {
@@ -83,20 +89,9 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
 }
 
 async function backfillSetupStatusIfNeeded(sql: postgres.Sql): Promise<void> {
-  await sql.unsafe(RESET_FALSE_SETUP_WITHOUT_ADMIN_SQL);
-  await sql.unsafe(LEGACY_SETUP_BACKFILL_SQL);
-}
-
-async function ensureStorageBuckets(sql: postgres.Sql): Promise<void> {
-  const rows = await sql<{ name: string }[]>`
-    SELECT name FROM storage.buckets WHERE name IN ('school-branding', 'item-uploads')
-  `;
-  const existing = new Set(rows.map((r) => r.name));
-  if (existing.has("school-branding") && existing.has("item-uploads")) {
+  if (!(await tableExists(sql, "public", "accounts"))) {
     return;
   }
-  const storageSql = loadStorageMigrationSql();
-  if (storageSql) {
-    await runSqlBatch(sql, storageSql);
-  }
+  await sql.unsafe(RESET_FALSE_SETUP_WITHOUT_ADMIN_SQL);
+  await sql.unsafe(LEGACY_SETUP_BACKFILL_SQL);
 }

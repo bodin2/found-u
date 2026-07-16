@@ -1187,7 +1187,7 @@ export async function registerStudentAccount(input: {
   const account = await getStudentAccount(id);
   if (!account) return { ok: false, error: "ไม่พบเลขประจำตัวในระบบ" };
   if (account.status === "disabled") return { ok: false, error: "บัญชีนี้ถูกปิดใช้งาน" };
-  if (account.isRegistered) return { ok: false, error: "บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ" };
+  if (account.isRegistered) return { ok: false, error: "คุณเคยสมัครสมาชิกไปแล้ว กรุณาเข้าสู่ระบบ" };
 
   const displayName = `${account.firstName} ${account.lastName}`.trim();
   const passwordHash = hashSecret(input.password);

@@ -39,6 +39,7 @@ import { wizardAdminSchema } from "@/lib/setup/validations/wizard-admin";
 import { OG_METADATA_CACHE_TAG } from "@/lib/seo-metadata";
 import { clearAiCredentialsCache } from "@/lib/ai/credentials-resolver";
 import { hasMinimumSetupEnv } from "@/lib/setup/db-url";
+import { ensureStorageBuckets } from "@/lib/setup/ensure-storage-buckets";
 
 export type SetupActionResult =
   | { ok: true }
@@ -119,6 +120,7 @@ export async function saveBrandingAction(
     let logoUrl: string | undefined;
     const logoFile = formData.get("logo");
     if (logoFile instanceof File && logoFile.size > 0) {
+      await ensureStorageBuckets();
       const { mime, ext } = await validateLogoFile(logoFile);
       const path = `logo-${Date.now()}.${ext}`;
       logoUrl = await uploadToSupabaseBucket(

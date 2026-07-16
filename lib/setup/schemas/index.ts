@@ -33,3 +33,10 @@ export function loadStorageMigrationSql(): string | null {
   const file = listMigrationFiles().find((name) => name.includes("setup_storage_buckets"));
   return file ? readMigrationSql(file) : null;
 }
+
+export function loadAccountsMigrationSql(): string | null {
+  const file = listMigrationFiles().find((name) =>
+    name.includes("create_unified_accounts")
+  );
+  return file ? readMigrationSql(file) : null;
+}
