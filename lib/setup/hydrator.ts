@@ -4,6 +4,7 @@ import {
   RESET_FALSE_SETUP_WITHOUT_ADMIN_SQL,
 } from "@/lib/setup/backfill-sql";
 import { ensureAccountsTableWithSql } from "@/lib/setup/ensure-accounts-table";
+import { ensureContentCmsWithSql } from "@/lib/setup/ensure-content-cms";
 import { ensureStorageBucketsWithSql } from "@/lib/setup/ensure-storage-buckets";
 import { SETUP_ADVISORY_LOCK_ID } from "@/lib/setup/constants";
 import { resolvePostgresUrl } from "@/lib/setup/db-url";
@@ -44,6 +45,7 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
 
     if (state.hasSystemConfig && state.hasLostItems) {
       await ensureAccountsTableWithSql(sql);
+      await ensureContentCmsWithSql(sql);
       await backfillSetupStatusIfNeeded(sql);
       await ensureStorageBucketsWithSql(sql);
       return { ok: true, mode: "skipped" };
@@ -56,6 +58,7 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
       }
       await runSqlBatch(sql, systemConfigSql);
       await ensureAccountsTableWithSql(sql);
+      await ensureContentCmsWithSql(sql);
       await backfillSetupStatusIfNeeded(sql);
       await ensureStorageBucketsWithSql(sql);
       return { ok: true, mode: "system_config_only" };
@@ -71,6 +74,7 @@ export async function hydrateDatabase(): Promise<HydrationResult> {
     }
 
     await ensureAccountsTableWithSql(sql);
+    await ensureContentCmsWithSql(sql);
     await ensureStorageBucketsWithSql(sql);
     await backfillSetupStatusIfNeeded(sql);
 

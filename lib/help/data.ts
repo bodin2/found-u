@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseAdminEnv } from "@/lib/setup/db-url";
 import { getPublishedArticleBySlug } from "@/lib/blog/data";
+import { isMissingRelationError } from "@/lib/supabase/missing-relation";
 import type { Article } from "@/lib/blog/types";
 import type {
   HelpAudience,
@@ -61,8 +62,12 @@ export async function getHelpPageWithSections(
           .order("sort_order", { ascending: true }),
       ]);
 
-    if (pageError) console.error("[help] page fetch error:", pageError);
-    if (sectionError) console.error("[help] sections fetch error:", sectionError);
+    if (pageError && !isMissingRelationError(pageError)) {
+      console.error("[help] page fetch error:", pageError);
+    }
+    if (sectionError && !isMissingRelationError(sectionError)) {
+      console.error("[help] sections fetch error:", sectionError);
+    }
     if (pageError || sectionError || !pageRow) return null;
 
     return {
@@ -72,7 +77,9 @@ export async function getHelpPageWithSections(
       ),
     };
   } catch (error) {
-    console.error("[help] getHelpPageWithSections:", error);
+    if (!isMissingRelationError(error)) {
+      console.error("[help] getHelpPageWithSections:", error);
+    }
     return null;
   }
 }
@@ -110,8 +117,12 @@ export async function listHelpPages(): Promise<HelpPage[]> {
           .order("published_at", { ascending: false }),
       ]);
 
-    if (legacyError) console.error("[help] listHelpPages legacy:", legacyError);
-    if (articleError) console.error("[help] listHelpPages articles:", articleError);
+    if (legacyError && !isMissingRelationError(legacyError)) {
+      console.error("[help] listHelpPages legacy:", legacyError);
+    }
+    if (articleError && !isMissingRelationError(articleError)) {
+      console.error("[help] listHelpPages articles:", articleError);
+    }
 
     const legacy = (legacyRows ?? []).map((row) =>
       mapPage(row as Record<string, unknown>)
@@ -130,7 +141,9 @@ export async function listHelpPages(): Promise<HelpPage[]> {
 
     return [...legacy, ...fromArticles];
   } catch (error) {
-    console.error("[help] listHelpPages:", error);
+    if (!isMissingRelationError(error)) {
+      console.error("[help] listHelpPages:", error);
+    }
     return [];
   }
 }

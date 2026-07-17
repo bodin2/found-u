@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseAdminEnv } from "@/lib/setup/db-url";
 import { mapArticle } from "@/lib/blog/map";
+import { isMissingRelationError } from "@/lib/supabase/missing-relation";
 import type { Article, ArticleSection } from "@/lib/blog/types";
 
 export { mapArticle } from "@/lib/blog/map";
@@ -28,12 +29,16 @@ export async function listPublishedArticles(options?: {
 
     const { data, error } = await query;
     if (error) {
-      console.error("[blog] listPublishedArticles:", error);
+      if (!isMissingRelationError(error)) {
+        console.error("[blog] listPublishedArticles:", error);
+      }
       return [];
     }
     return (data ?? []).map((row) => mapArticle(row as Record<string, unknown>));
   } catch (error) {
-    console.error("[blog] listPublishedArticles:", error);
+    if (!isMissingRelationError(error)) {
+      console.error("[blog] listPublishedArticles:", error);
+    }
     return [];
   }
 }
@@ -58,13 +63,17 @@ export async function getPublishedArticleBySlug(
 
     const { data, error } = await query.maybeSingle();
     if (error) {
-      console.error("[blog] getPublishedArticleBySlug:", error);
+      if (!isMissingRelationError(error)) {
+        console.error("[blog] getPublishedArticleBySlug:", error);
+      }
       return null;
     }
     if (!data) return null;
     return mapArticle(data as Record<string, unknown>);
   } catch (error) {
-    console.error("[blog] getPublishedArticleBySlug:", error);
+    if (!isMissingRelationError(error)) {
+      console.error("[blog] getPublishedArticleBySlug:", error);
+    }
     return null;
   }
 }
@@ -81,13 +90,17 @@ export async function getArticleById(id: string): Promise<Article | null> {
       .eq("id", id)
       .maybeSingle();
     if (error) {
-      console.error("[blog] getArticleById:", error);
+      if (!isMissingRelationError(error)) {
+        console.error("[blog] getArticleById:", error);
+      }
       return null;
     }
     if (!data) return null;
     return mapArticle(data as Record<string, unknown>);
   } catch (error) {
-    console.error("[blog] getArticleById:", error);
+    if (!isMissingRelationError(error)) {
+      console.error("[blog] getArticleById:", error);
+    }
     return null;
   }
 }

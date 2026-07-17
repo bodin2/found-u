@@ -20,6 +20,7 @@ import {
   Share2,
   MapPin,
   Image as ImageIcon,
+  EyeOff,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -577,6 +578,69 @@ export default function AdminSettingsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Coming Soon — landing CTA */}
+              <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                  <EyeOff className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        Coming Soon (หน้า Landing)
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        เมื่อเปิด ปุ่มเข้าสู่ระบบบนหน้าแรกจะถูกปิด และแสดงข้อความแทน
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          comingSoonEnabled: !settings.comingSoonEnabled,
+                        })
+                      }
+                      className={cn(
+                        "w-14 h-8 rounded-full transition-colors relative flex-shrink-0",
+                        settings.comingSoonEnabled
+                          ? "bg-line-green"
+                          : "bg-gray-300 dark:bg-gray-600"
+                      )}
+                      aria-pressed={Boolean(settings.comingSoonEnabled)}
+                      aria-label="สลับ Coming Soon"
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-transform",
+                          settings.comingSoonEnabled ? "right-1" : "left-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {settings.comingSoonEnabled ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        ข้อความที่แสดง
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.comingSoonMessage || ""}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            comingSoonMessage: e.target.value,
+                          })
+                        }
+                        placeholder="พบกันเร็วๆนี้"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-line-green"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

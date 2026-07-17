@@ -40,3 +40,17 @@ export function loadAccountsMigrationSql(): string | null {
   );
   return file ? readMigrationSql(file) : null;
 }
+
+export function loadHelpPagesMigrationSql(): string | null {
+  const file = listMigrationFiles().find((name) =>
+    name.includes("help_pages_cms")
+  );
+  return file ? readMigrationSql(file) : null;
+}
+
+export function loadArticlesMigrationSql(): string | null {
+  const file = listMigrationFiles().find((name) =>
+    name.includes("articles_blog_cms")
+  );
+  return file ? readMigrationSql(file) : null;
+}

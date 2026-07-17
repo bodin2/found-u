@@ -163,7 +163,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   compressionQuality: 0.8,
   nfcEnabled: true,
   nfcRequireLoginToReport: true,
-  comingSoonEnabled: true,
+  comingSoonEnabled: false,
   comingSoonMessage: "พบกันเร็วๆนี้",
 };
 

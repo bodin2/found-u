@@ -88,7 +88,7 @@ export async function getPublicLandingSettings(): Promise<PublicLandingSettings>
     };
   } catch {
     return {
-      comingSoonEnabled: DEFAULT_APP_SETTINGS.comingSoonEnabled ?? true,
+      comingSoonEnabled: DEFAULT_APP_SETTINGS.comingSoonEnabled ?? false,
       comingSoonMessage: normalizeComingSoonMessage(
         DEFAULT_APP_SETTINGS.comingSoonMessage,
         "พบกันเร็วๆนี้"

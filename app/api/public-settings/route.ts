@@ -10,7 +10,7 @@ export async function GET() {
   } catch (err) {
     console.error("public-settings error:", err);
     return NextResponse.json({
-      comingSoonEnabled: true,
+      comingSoonEnabled: false,
       comingSoonMessage: "พบกันเร็วๆนี้",
     });
   }
