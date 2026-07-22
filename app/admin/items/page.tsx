@@ -1,9 +1,8 @@
 "use client";
 
-// Force dynamic rendering for security
-export const dynamic = 'force-dynamic';
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   Search,
   Package,
@@ -12,6 +11,11 @@ import {
   Filter,
   Eye,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  MapPinned,
+  Sparkles,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 import {
@@ -25,6 +29,8 @@ import {
   timestampToDate,
   getCategories,
   getLocations,
+  getLostItems,
+  getFoundItems,
 } from "@/lib/database";
 import {
   STATUS_CONFIG,
@@ -38,10 +44,13 @@ import {
   type LostItem,
   type FoundItem,
   type ItemStatus,
+  type ContactInfo,
 } from "@/lib/types";
 import type { CategoryConfig, LocationConfig } from "@/lib/database";
 import { cn, formatThaiDate } from "@/lib/utils";
 import { ResponsiveModal } from "@/components/ui/responsive-modal";
+import { StatusAlert } from "@/components/ui/status-alert";
+import { feedbackVariantStyles } from "@/lib/feedback/variant-styles";
 import { logStatusChanged, logActivity } from "@/lib/logger";
 import {
   formatHandoverDeadlineThai,
@@ -52,51 +61,352 @@ import { triggerFoundHandoverExpirySweep } from "@/lib/found-handover-client";
 import { useAuth } from "@/contexts/auth-context";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { useMapView } from "@/hooks/use-map-view";
-import MapCanvas from "@/components/ui/map-canvas";
+import { useMediaQuery } from "@/hooks/use-media-query";
+
+const MapCanvas = dynamic(() => import("@/components/ui/map-canvas"), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="h-52 sm:h-64 rounded-xl bg-bg-secondary motion-safe:animate-pulse"
+      aria-hidden
+    />
+  ),
+});
 
 type Tab = "lost" | "found";
 
+const SEARCH_MAX_LENGTH = 120;
+
+/** Map pins (Leaflet needs concrete colors; match design tokens). */
+const MARKER_LOST = "#EF4444";
+const MARKER_FOUND = "#06C755";
+
+const LOST_FILTER_STATUSES: ItemStatus[] = ["searching", "found", "claimed", "expired"];
+const FOUND_FILTER_STATUSES: ItemStatus[] = [
+  "pending_room_confirm",
+  "found",
+  "claimed",
+  "expired",
+];
+
+const surfaceClass =
+  "bg-bg-card rounded-2xl overflow-hidden border border-border-light";
+
+const fieldClass =
+  "min-h-11 text-base bg-bg-tertiary border border-transparent rounded-xl focus:outline-none focus:bg-bg-primary focus:ring-2 focus:ring-line-green/35 focus:border-line-green/40 text-text-primary placeholder:text-text-secondary motion-safe:transition-colors motion-safe:duration-200";
+
+const iconActionClass =
+  "inline-flex items-center justify-center min-h-11 min-w-11 text-text-secondary rounded-lg motion-safe:transition-colors motion-safe:duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary";
+
+const tabBaseClass =
+  "flex flex-1 sm:flex-none items-center justify-center gap-2 min-h-11 px-4 py-2.5 rounded-xl font-medium whitespace-nowrap motion-safe:transition-colors motion-safe:duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary";
+
+const ctaClass =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-line-green-cta px-5 text-sm font-medium text-white hover:bg-line-green-cta-hover active:bg-line-green-cta-hover motion-safe:transition-colors motion-safe:duration-200";
+
+function normalizeQuery(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+function matchesHaystack(values: Array<string | null | undefined>, query: string): boolean {
+  if (!query) return true;
+  return values.some((value) => (value ?? "").toLowerCase().includes(query));
+}
+
+function contactValues(contacts: ContactInfo[] | undefined): string[] {
+  return (contacts ?? []).map((c) => c.value);
+}
+
+function itemMatchesSearch(item: LostItem | FoundItem, rawQuery: string): boolean {
+  const query = normalizeQuery(rawQuery);
+  if (!query) return true;
+
+  if (isLostItem(item)) {
+    return matchesHaystack(
+      [
+        item.itemName,
+        item.trackingCode,
+        item.description,
+        item.locationLost,
+        item.locationPlaceName,
+        item.studentId,
+        ...contactValues(item.contacts),
+      ],
+      query
+    );
+  }
+
+  return matchesHaystack(
+    [
+      item.itemName,
+      item.description,
+      item.trackingCode,
+      item.locationFound,
+      item.locationPlaceName,
+      item.brand,
+      item.color,
+      ...contactValues(item.finderContacts),
+    ],
+    query
+  );
+}
+
+function DetailField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-sm text-text-secondary">{label}</p>
+      <div className="text-text-primary break-words">{children}</div>
+    </div>
+  );
+}
+
+const TIP_STORAGE_KEY = "found-u.admin.items.tip-dismissed";
+
+function SkeletonBar({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn("rounded-lg bg-bg-tertiary motion-safe:animate-pulse", className)}
+      aria-hidden
+    />
+  );
+}
+
+function AdminItemsSkeleton() {
+  return (
+    <div
+      className="px-3 py-4 sm:px-4 sm:py-5 lg:p-6 space-y-4 sm:space-y-5 lg:space-y-6"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span className="sr-only">กำลังโหลดรายการ...</span>
+      <div className="space-y-2">
+        <SkeletonBar className="h-8 w-48 sm:w-56" />
+        <SkeletonBar className="h-4 w-72 max-w-full" />
+      </div>
+      <div className="flex gap-2">
+        <SkeletonBar className="h-11 flex-1 sm:flex-none sm:w-36 rounded-xl" />
+        <SkeletonBar className="h-11 flex-1 sm:flex-none sm:w-36 rounded-xl" />
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <SkeletonBar className="h-11 flex-1 rounded-xl" />
+        <SkeletonBar className="h-11 w-full sm:w-44 rounded-xl" />
+      </div>
+      <div className={cn(surfaceClass, "p-0")}>
+        <div className="hidden md:block divide-y divide-border-light">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 lg:px-6 py-4">
+              <SkeletonBar className="h-4 w-20" />
+              <div className="flex-1 space-y-2 min-w-0">
+                <SkeletonBar className="h-4 w-40 max-w-full" />
+                <SkeletonBar className="h-3 w-28 lg:hidden" />
+              </div>
+              <SkeletonBar className="hidden lg:block h-4 w-24" />
+              <SkeletonBar className="h-6 w-20 rounded-full" />
+              <SkeletonBar className="h-9 w-20 rounded-lg shrink-0" />
+            </div>
+          ))}
+        </div>
+        <div className="md:hidden divide-y divide-border-light">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-4">
+              <div className="flex-1 space-y-2 min-w-0">
+                <SkeletonBar className="h-4 w-36 max-w-full" />
+                <SkeletonBar className="h-3 w-48 max-w-full" />
+                <SkeletonBar className="h-3 w-24" />
+              </div>
+              <SkeletonBar className="h-6 w-16 rounded-full shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ItemsEmptyState({
+  activeTab,
+  hasActiveFilters,
+  otherTabCount,
+  onClear,
+  onSwitchTab,
+}: {
+  activeTab: Tab;
+  hasActiveFilters: boolean;
+  otherTabCount: number;
+  onClear: () => void;
+  onSwitchTab: () => void;
+}) {
+  const Icon = activeTab === "lost" ? Search : Package;
+  const otherLabel = activeTab === "lost" ? "ของเจอ" : "ของหาย";
+
+  if (hasActiveFilters) {
+    return (
+      <div className="py-12 px-4 text-center max-w-md mx-auto" role="status">
+        <div
+          className={cn(
+            "mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full",
+            activeTab === "lost"
+              ? "bg-status-error-light text-red-800 dark:text-red-200"
+              : "bg-line-green-light text-line-green-link"
+          )}
+        >
+          <Filter className="h-6 w-6" aria-hidden />
+        </div>
+        <h3 className="text-base font-semibold text-text-primary text-balance">
+          ไม่พบรายการที่ตรงกับเงื่อนไข
+        </h3>
+        <p className="mt-2 text-sm text-text-secondary text-pretty">
+          ลองเปลี่ยนคำค้นหา หรือล้างตัวกรองเพื่อดูรายการทั้งหมดอีกครั้ง
+        </p>
+        <button type="button" onClick={onClear} className={cn(ctaClass, "mt-4")}>
+          ล้างตัวกรอง
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-12 px-4 text-center max-w-lg mx-auto" role="status">
+      <div
+        className={cn(
+          "mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full",
+          activeTab === "lost"
+            ? "bg-status-error-light text-red-800 dark:text-red-200"
+            : "bg-line-green-light text-line-green-link"
+        )}
+      >
+        <Icon className="h-6 w-6" aria-hidden />
+      </div>
+      <h3 className="text-base font-semibold text-text-primary text-balance">
+        {activeTab === "lost" ? "ยังไม่มีรายการของหาย" : "ยังไม่มีรายการของเจอ"}
+      </h3>
+      <p className="mt-2 text-sm text-text-secondary text-pretty">
+        {activeTab === "lost"
+          ? "เมื่อนักเรียนแจ้งของหาย รายการจะแสดงที่นี่ — ค้นหาด้วยรหัสติดตาม อัปเดตสถานะ หรือลบรายการที่ไม่ถูกต้อง"
+          : "เมื่อมีคนแจ้งของเจอ รายการจะแสดงที่นี่ — เปิดรายการแล้วยืนยันเมื่อของถึงห้องบุคคล เพื่อให้นักเรียนมารับได้"}
+      </p>
+      <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 sm:gap-3">
+        <Link href="/admin/matching" className={ctaClass}>
+          <Sparkles className="w-4 h-4" aria-hidden />
+          ไปที่ Matching
+        </Link>
+        {otherTabCount > 0 && (
+          <button
+            type="button"
+            onClick={onSwitchTab}
+            className="inline-flex min-h-11 items-center justify-center rounded-full bg-bg-tertiary px-5 text-sm font-medium text-text-primary hover:bg-border-light active:bg-border-light motion-safe:transition-colors motion-safe:duration-200"
+          >
+            ดู{otherLabel} ({otherTabCount})
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminItemsPage() {
+  const searchInputId = useId();
+  const statusFilterId = useId();
+  const resultsStatusId = useId();
+
   const [activeTab, setActiveTab] = useState<Tab>("lost");
   const [lostItems, setLostItems] = useState<LostItem[]>([]);
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
   const [selectedItem, setSelectedItem] = useState<LostItem | FoundItem | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [categories, setCategories] = useState<CategoryConfig[]>([]);
   const [locations, setLocations] = useState<LocationConfig[]>([]);
+  const [tipDismissed, setTipDismissed] = useState(true);
   const { user, appSettings, appSettingsReady } = useAuth();
   const { showAlert, showConfirm, dialog } = useAppDialog();
+  const isMdUp = useMediaQuery("(min-width: 768px)");
+  const prefersHover = useMediaQuery("(hover: hover) and (pointer: fine)");
 
   useEffect(() => {
-    // Load categories and locations from Firestore
-    const loadConfig = async () => {
-      const [cats, locs] = await Promise.all([
-        getCategories(),
-        getLocations()
-      ]);
-      setCategories(cats);
-      setLocations(locs);
+    try {
+      setTipDismissed(window.localStorage.getItem(TIP_STORAGE_KEY) === "1");
+    } catch {
+      setTipDismissed(false);
+    }
+  }, []);
+
+  /** Keep modal row in sync with live list updates; close if deleted elsewhere */
+  useEffect(() => {
+    setSelectedItem((prev) => {
+      if (!prev) return prev;
+      const list = isLostItem(prev) ? lostItems : foundItems;
+      return list.find((item) => item.id === prev.id) ?? null;
+    });
+  }, [lostItems, foundItems]);
+
+  useEffect(() => {
+    if (showModal && !selectedItem) {
+      setShowModal(false);
+    }
+  }, [showModal, selectedItem]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const finishLoading = () => {
+      if (!cancelled) setLoading(false);
     };
-    loadConfig();
+
+    const bootstrap = async () => {
+      setLoading(true);
+      try {
+        const [cats, locs] = await Promise.all([getCategories(), getLocations()]);
+        if (cancelled) return;
+        setCategories(cats);
+        setLocations(locs);
+      } catch (error) {
+        console.error("Error loading item config:", error);
+      }
+
+      try {
+        const [lost, found] = await Promise.all([getLostItems(), getFoundItems()]);
+        if (cancelled) return;
+        setLostItems(lost);
+        setFoundItems(found);
+        setLoadError(null);
+      } catch (error) {
+        console.error("Error loading items:", error);
+        if (!cancelled) {
+          setLoadError("โหลดรายการไม่สำเร็จ กรุณาลองอีกครั้ง");
+        }
+      } finally {
+        finishLoading();
+      }
+    };
+
+    void bootstrap();
 
     const unsubLost = subscribeToLostItems((items) => {
+      if (cancelled) return;
       setLostItems(items);
-      setLoading(false);
+      setLoadError(null);
+      finishLoading();
     });
 
     const unsubFound = subscribeToFoundItems((items) => {
+      if (cancelled) return;
       setFoundItems(items);
     });
 
     return () => {
+      cancelled = true;
       unsubLost();
       unsubFound();
     };
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
     if (appSettingsReady) {
@@ -118,7 +428,38 @@ export default function AdminItemsPage() {
     locateUser: false,
   });
 
+  const openItem = (item: LostItem | FoundItem) => {
+    setSelectedItem(item);
+    setShowModal(true);
+  };
+
+  const switchTab = (tab: Tab) => {
+    setActiveTab(tab);
+    const allowed = tab === "lost" ? LOST_FILTER_STATUSES : FOUND_FILTER_STATUSES;
+    setStatusFilter((prev) => (prev === "all" || allowed.includes(prev) ? prev : "all"));
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+  };
+
+  const filterStatuses = activeTab === "lost" ? LOST_FILTER_STATUSES : FOUND_FILTER_STATUSES;
+
+  const dismissTip = () => {
+    setTipDismissed(true);
+    try {
+      window.localStorage.setItem(TIP_STORAGE_KEY, "1");
+    } catch {
+      /* ignore quota / private mode */
+    }
+  };
+
+  const hasActiveFilters = Boolean(normalizeQuery(searchQuery)) || statusFilter !== "all";
+  const busy = updating || deleting;
+
   const handleStatusUpdate = async (item: LostItem | FoundItem, newStatus: ItemStatus) => {
+    if (busy) return;
     setUpdating(true);
     try {
       if (isLostItem(item)) {
@@ -144,20 +485,21 @@ export default function AdminItemsPage() {
           user?.email || undefined
         );
       }
-      setShowModal(false);
+      /* Keep modal open — list sync refreshes the selected row */
     } catch (error) {
       console.error("Error updating status:", error);
       void showAlert({
         title: "อัปเดตไม่สำเร็จ",
-        message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ",
+        message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ กรุณาลองอีกครั้ง",
         variant: "error",
       });
+    } finally {
+      setUpdating(false);
     }
-    setUpdating(false);
   };
 
   const handleConfirmRoomHandover = async (item: FoundItem) => {
-    if (!user?.uid) return;
+    if (!user?.uid || busy) return;
     if (item.status === "expired") {
       void showAlert({
         title: "ไม่สามารถยืนยันได้",
@@ -202,22 +544,25 @@ export default function AdminItemsPage() {
       console.error("Error confirming room handover:", error);
       void showAlert({
         title: "ยืนยันไม่สำเร็จ",
-        message: "ไม่สามารถยืนยันการรับของที่ห้องบุคคลได้",
+        message: "ไม่สามารถยืนยันการรับของที่ห้องบุคคลได้ กรุณาลองอีกครั้ง",
         variant: "error",
       });
+    } finally {
+      setUpdating(false);
     }
-    setUpdating(false);
   };
 
   const handleDelete = async (item: LostItem | FoundItem) => {
+    if (busy) return;
     const confirmed = await showConfirm({
       title: "ลบรายการ",
-      message: "ต้องการลบรายการนี้หรือไม่?",
+      message: `ต้องการลบ “${getItemDisplayName(item)}” (${item.trackingCode}) หรือไม่? การลบไม่สามารถย้อนกลับได้`,
       variant: "warning",
       confirmLabel: "ลบ",
     });
     if (!confirmed) return;
 
+    setDeleting(true);
     try {
       if (isLostItem(item)) {
         await deleteLostItem(item.id);
@@ -227,7 +572,7 @@ export default function AdminItemsPage() {
           targetType: "lostItem",
           targetId: item.id,
           targetName: item.itemName,
-          userEmail: user?.email || undefined
+          userEmail: user?.email || undefined,
         });
       } else {
         await deleteFoundItem(item.id);
@@ -237,310 +582,584 @@ export default function AdminItemsPage() {
           targetType: "foundItem",
           targetId: item.id,
           targetName: item.description,
-          userEmail: user?.email || undefined
+          userEmail: user?.email || undefined,
         });
       }
       setShowModal(false);
+      setSelectedItem(null);
     } catch (error) {
       console.error("Error deleting item:", error);
       void showAlert({
         title: "ลบไม่สำเร็จ",
-        message: "เกิดข้อผิดพลาดในการลบ",
+        message: "เกิดข้อผิดพลาดในการลบ กรุณาลองอีกครั้ง",
         variant: "error",
       });
+    } finally {
+      setDeleting(false);
     }
   };
 
-  // Filter items
   const filteredLostItems = lostItems.filter((item) => {
-    const matchesSearch =
-      item.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.trackingCode.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = itemMatchesSearch(item, searchQuery);
     const matchesStatus = statusFilter === "all" || item.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const filteredFoundItems = foundItems.filter((item) => {
-    const matchesSearch =
-      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.trackingCode.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = itemMatchesSearch(item, searchQuery);
     const matchesStatus = statusFilter === "all" || item.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const mapMarkers = (activeTab === "lost" ? filteredLostItems : filteredFoundItems)
+  const visibleItems = activeTab === "lost" ? filteredLostItems : filteredFoundItems;
+  const sourceCount = activeTab === "lost" ? lostItems.length : foundItems.length;
+
+  const mapMarkers = visibleItems
     .filter((item) => item.locationCoords)
     .map((item) => ({
       id: item.id,
       position: item.locationCoords!,
       label: getItemDisplayName(item),
-      color: activeTab === "lost" ? "#ef4444" : "#06C755",
+      color: activeTab === "lost" ? MARKER_LOST : MARKER_FOUND,
     }));
 
+  const emptyMessage = hasActiveFilters
+    ? "ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา"
+    : sourceCount === 0
+      ? activeTab === "lost"
+        ? "ยังไม่มีรายการของหาย"
+        : "ยังไม่มีรายการของเจอ"
+      : "ไม่พบรายการ";
+
+  const pendingRoomCount = foundItems.filter((item) =>
+    isFoundPendingRoomConfirm(item.status)
+  ).length;
+  const otherTabCount = activeTab === "lost" ? foundItems.length : lostItems.length;
+  const showWorkflowTip =
+    !tipDismissed && !loading && !loadError && lostItems.length + foundItems.length > 0;
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#06C755]" />
-      </div>
-    );
+    return <AdminItemsSkeleton />;
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
-      {/* Page Header */}
+    <div className="px-3 py-4 sm:px-4 sm:py-5 lg:p-6 space-y-4 sm:space-y-5 lg:space-y-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))]">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">จัดการรายการ</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
+        <h1 className="text-xl sm:text-2xl font-semibold text-text-primary text-balance">
+          จัดการรายการ
+        </h1>
+        <p className="text-text-secondary mt-1 text-sm sm:text-base">
           ดูและจัดการรายการของหายและของเจอทั้งหมด
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2">
+      {loadError && (
+        <StatusAlert
+          variant="error"
+          title="โหลดไม่สำเร็จ"
+          message={loadError}
+          action={{
+            label: "ลองอีกครั้ง",
+            onClick: () => setReloadToken((n) => n + 1),
+          }}
+        />
+      )}
+
+      {showWorkflowTip && (
+        <div className="relative rounded-xl border border-line-green/30 bg-line-green-light px-4 py-3 pr-14">
+          <p className="text-sm font-medium text-line-green-dark dark:text-line-green">
+            เริ่มจากค้นหา แล้วเปิดรายการ
+          </p>
+          <p className="mt-1 text-sm text-line-green-dark/85 dark:text-line-green/85 text-pretty">
+            อัปเดตสถานะได้จากหน้ารายละเอียด — ของเจอที่รอส่งห้องบุคคล กดยืนยันเมื่อของถึงแล้ว
+          </p>
+          <button
+            type="button"
+            onClick={dismissTip}
+            className="absolute top-2 right-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-line-green-dark/80 hover:bg-line-green/15 active:bg-line-green/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35"
+            aria-label="ปิดคำแนะนำ"
+          >
+            <X className="w-4 h-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      {activeTab === "found" &&
+        pendingRoomCount > 0 &&
+        statusFilter !== "pending_room_confirm" && (
+          <StatusAlert
+            variant="info"
+            title={`มี ${pendingRoomCount} รายการรอส่งห้องบุคคล`}
+            message="กรองเฉพาะรายการที่รอยืนยัน เพื่อเคลียร์คิวส่งมอบได้เร็วขึ้น"
+            action={{
+              label: "แสดงรายการที่รอ",
+              onClick: () => setStatusFilter("pending_room_confirm"),
+            }}
+          />
+        )}
+
+      <div
+        className="flex gap-2 overflow-x-auto pb-0.5 -mx-0.5 px-0.5"
+        role="group"
+        aria-label="ประเภทข้อมูล"
+      >
         <button
-          onClick={() => setActiveTab("lost")}
+          type="button"
+          onClick={() => switchTab("lost")}
+          aria-pressed={activeTab === "lost"}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all",
+            tabBaseClass,
             activeTab === "lost"
-              ? "bg-red-500 text-white"
-              : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+              ? "bg-status-error-light text-red-800 dark:text-red-200 ring-1 ring-status-error/30"
+              : "bg-bg-card text-text-secondary ring-1 ring-border-light active:bg-bg-secondary",
+            prefersHover && activeTab !== "lost" && "hover:bg-bg-secondary"
           )}
         >
-          <Search className="w-4 h-4" />
+          <Search className="w-4 h-4 shrink-0" aria-hidden />
           ของหาย
-          <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs">
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded-full text-xs tabular-nums font-medium",
+              activeTab === "lost"
+                ? "bg-status-error/15 text-red-800 dark:text-red-200"
+                : "bg-bg-tertiary text-text-secondary"
+            )}
+          >
             {lostItems.length}
           </span>
         </button>
         <button
-          onClick={() => setActiveTab("found")}
+          type="button"
+          onClick={() => switchTab("found")}
+          aria-pressed={activeTab === "found"}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all",
+            tabBaseClass,
             activeTab === "found"
-              ? "bg-[#06C755] text-white"
-              : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+              ? "bg-line-green-light text-line-green-link ring-1 ring-line-green/35"
+              : "bg-bg-card text-text-secondary ring-1 ring-border-light active:bg-bg-secondary",
+            prefersHover && activeTab !== "found" && "hover:bg-bg-secondary"
           )}
         >
-          <Package className="w-4 h-4" />
+          <Package className="w-4 h-4 shrink-0" aria-hidden />
           ของเจอ
-          <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs">
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded-full text-xs tabular-nums font-medium",
+              activeTab === "found"
+                ? "bg-line-green/20 text-line-green-link"
+                : "bg-bg-tertiary text-text-secondary"
+            )}
+          >
             {foundItems.length}
           </span>
         </button>
       </div>
 
-      {/* Search and Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="ค้นหาด้วยชื่อ, รหัสติดตาม หรือรหัสนักเรียน..."
-            className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#06C755] text-gray-900 dark:text-white"
+        <div className="relative flex-1 min-w-0">
+          <label htmlFor={searchInputId} className="sr-only">
+            ค้นหารายการด้วยชื่อ รหัสติดตาม หรือรหัสนักเรียน
+          </label>
+          <Search
+            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary pointer-events-none"
+            aria-hidden
           />
+          <input
+            id={searchInputId}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value.slice(0, SEARCH_MAX_LENGTH))}
+            maxLength={SEARCH_MAX_LENGTH}
+            placeholder={
+              isMdUp
+                ? "ค้นหาด้วยชื่อ, รหัสติดตาม หรือรหัสนักเรียน..."
+                : "ค้นหาชื่อหรือรหัส..."
+            }
+            autoComplete="off"
+            enterKeyHint="search"
+            aria-controls={resultsStatusId}
+            className={cn(
+              "w-full pl-12 py-3",
+              searchQuery ? "pr-12" : "pr-4",
+              fieldClass,
+              "[appearance:textfield] [&::-webkit-search-cancel-button]:hidden"
+            )}
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35"
+              aria-label="ล้างคำค้นหา"
+            >
+              <X className="w-4 h-4" aria-hidden />
+            </button>
+          ) : null}
         </div>
-        <div className="relative">
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <div className="relative w-full sm:w-auto sm:shrink-0">
+          <label htmlFor={statusFilterId} className="sr-only">
+            กรองตามสถานะ
+          </label>
+          <Filter
+            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary pointer-events-none"
+            aria-hidden
+          />
           <select
+            id={statusFilterId}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as ItemStatus | "all")}
-            className="pl-12 pr-8 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#06C755] text-gray-900 dark:text-white appearance-none min-w-[160px]"
+            className={cn(
+              "w-full sm:min-w-[11.5rem] pl-12 pr-10 py-3 appearance-none",
+              fieldClass
+            )}
           >
             <option value="all">ทุกสถานะ</option>
-            <option value="searching">กำลังตามหา</option>
-            <option value="pending_room_confirm">รอส่งห้องบุคคล</option>
-            <option value="found">ถึงห้องบุคคลแล้ว</option>
-            <option value="claimed">รับคืนแล้ว</option>
-            <option value="expired">หมดอายุ</option>
+            {filterStatuses.map((status) => (
+              <option key={status} value={status}>
+                {activeTab === "lost" && status === "found"
+                  ? "พบของแล้ว"
+                  : STATUS_CONFIG[status].label}
+              </option>
+            ))}
           </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary"
+            aria-hidden
+          />
         </div>
       </div>
 
-      {appSettings.mapsEnabled && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">แผนที่รายการ</h2>
-              <p className="text-xs text-gray-500">แสดงพิกัดที่ผู้ใช้ปักไว้</p>
-            </div>
-            <span className="text-xs text-gray-400">{mapMarkers.length} จุด</span>
-          </div>
-          <div className="p-4">
-            {mapMarkers.length > 0 ? (
-              <MapCanvas
-                center={mapCenter}
-                zoom={mapZoom}
-                fitPoints={mapFitPoints}
-                fitBoundsOnce
-                tileUrl={appSettings.mapTileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
-                attribution={appSettings.mapAttribution || ""}
-                mode="view"
-                polygon={schoolBoundary}
-                markers={mapMarkers}
-                className="h-72"
-              />
-            ) : (
-              <div className="h-48 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center text-sm text-gray-400">
-                ไม่มีพิกัดให้แสดง
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <p id={resultsStatusId} className="sr-only" aria-live="polite" aria-atomic="true">
+        {visibleItems.length === 0
+          ? emptyMessage
+          : `พบ ${visibleItems.length} รายการจากทั้งหมด ${sourceCount} รายการ`}
+      </p>
 
-      {/* Items Table/Cards */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-        {/* Desktop Table */}
-        <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700/50">
+      {appSettings.mapsEnabled &&
+        (isMdUp ? (
+          <div className={surfaceClass}>
+            <div
+              className={cn(
+                "px-4 py-3 border-b border-border-light flex items-center justify-between gap-3",
+                activeTab === "lost" ? "bg-status-error-light/60" : "bg-line-green-light/70"
+              )}
+            >
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-text-primary">แผนที่รายการ</h2>
+                <p
+                  className={cn(
+                    "text-xs",
+                    activeTab === "lost"
+                      ? "text-red-800/75 dark:text-red-200/75"
+                      : "text-line-green-dark/80 dark:text-line-green/80"
+                  )}
+                >
+                  แสดงพิกัดที่ผู้ใช้ปักไว้
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "text-xs tabular-nums shrink-0 px-2.5 py-1 rounded-full font-medium",
+                  activeTab === "lost"
+                    ? "bg-status-error/10 text-red-800 dark:text-red-200"
+                    : "bg-line-green/15 text-line-green-link"
+                )}
+              >
+                {mapMarkers.length} จุด
+              </span>
+            </div>
+            <div className="p-4 bg-bg-card">
+              {mapMarkers.length > 0 ? (
+                <MapCanvas
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  fitPoints={mapFitPoints}
+                  fitBoundsOnce
+                  tileUrl={appSettings.mapTileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
+                  attribution={appSettings.mapAttribution || ""}
+                  mode="view"
+                  polygon={schoolBoundary}
+                  markers={mapMarkers}
+                  className="h-64 lg:h-80 rounded-xl overflow-hidden"
+                />
+              ) : (
+                <div className="h-40 lg:h-48 rounded-xl border border-dashed border-border-light bg-bg-secondary flex items-center justify-center text-sm text-text-secondary">
+                  ไม่มีพิกัดให้แสดง
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <details className={cn(surfaceClass, "group")}>
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-text-primary [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <MapPinned
+                  className={cn(
+                    "w-4 h-4 shrink-0",
+                    activeTab === "lost" ? "text-status-error" : "text-line-green"
+                  )}
+                  aria-hidden
+                />
+                <span className="truncate">แผนที่รายการ</span>
+              </span>
+              <span className="inline-flex items-center gap-2 shrink-0">
+                <span className="text-xs text-text-secondary tabular-nums">
+                  {mapMarkers.length} จุด
+                </span>
+                <ChevronDown
+                  className="w-4 h-4 text-text-secondary motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180"
+                  aria-hidden
+                />
+              </span>
+            </summary>
+            <div className="border-t border-border-light p-3 bg-bg-card">
+              {mapMarkers.length > 0 ? (
+                <MapCanvas
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  fitPoints={mapFitPoints}
+                  fitBoundsOnce
+                  tileUrl={appSettings.mapTileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
+                  attribution={appSettings.mapAttribution || ""}
+                  mode="view"
+                  polygon={schoolBoundary}
+                  markers={mapMarkers}
+                  className="h-52 max-h-[40dvh] rounded-xl overflow-hidden"
+                />
+              ) : (
+                <div className="h-32 rounded-xl border border-dashed border-border-light bg-bg-secondary flex items-center justify-center text-sm text-text-secondary">
+                  ไม่มีพิกัดให้แสดง
+                </div>
+              )}
+            </div>
+          </details>
+        ))}
+
+      <div className={surfaceClass}>
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full min-w-[36rem] lg:min-w-0" aria-describedby={resultsStatusId}>
+            <thead className="bg-bg-secondary sticky top-0 z-[1]">
               <tr>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="text-left py-3 lg:py-4 px-4 lg:px-6 text-sm font-medium text-text-secondary">
                   รหัสติดตาม
                 </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="text-left py-3 lg:py-4 px-4 lg:px-6 text-sm font-medium text-text-secondary">
                   {activeTab === "lost" ? "สิ่งของ" : "รายละเอียด"}
                 </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="hidden lg:table-cell text-left py-4 px-6 text-sm font-medium text-text-secondary">
                   สถานที่
                 </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="hidden xl:table-cell text-left py-4 px-6 text-sm font-medium text-text-secondary">
                   วันที่
                 </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="text-left py-3 lg:py-4 px-4 lg:px-6 text-sm font-medium text-text-secondary">
                   สถานะ
                 </th>
-                <th className="text-right py-4 px-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                <th scope="col" className="text-right py-3 lg:py-4 px-4 lg:px-6 text-sm font-medium text-text-secondary sticky right-0 bg-bg-secondary">
                   จัดการ
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {(activeTab === "lost" ? filteredLostItems : filteredFoundItems).map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="py-4 px-6">
-                    <span className="font-mono text-sm text-[#06C755]">{item.trackingCode}</span>
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="text-gray-900 dark:text-white">
-                      {getItemDisplayName(item)}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-gray-500 dark:text-gray-400">
-                    {"locationLost" in item ? item.locationLost : item.locationFound}
-                  </td>
-                  <td className="py-4 px-6 text-gray-500 dark:text-gray-400">
-                    {item.createdAt ? formatThaiDate(timestampToDate(item.createdAt)) : "-"}
-                  </td>
-                  <td className="py-4 px-6">
-                    <span
+            <tbody className="divide-y divide-border-light">
+              {visibleItems.map((item) => {
+                const displayName = getItemDisplayName(item);
+                const location =
+                  "locationLost" in item ? item.locationLost : item.locationFound;
+                const statusConfig = getItemStatusConfig(item);
+                return (
+                  <tr
+                    key={item.id}
+                    className={cn("group/row", prefersHover && "hover:bg-bg-secondary/80")}
+                  >
+                    <td className="py-3 lg:py-4 px-4 lg:px-6">
+                      <span className="font-mono text-sm text-line-green-link">
+                        {item.trackingCode}
+                      </span>
+                    </td>
+                    <td className="py-3 lg:py-4 px-4 lg:px-6 max-w-[12rem] lg:max-w-[14rem]">
+                      <span className="text-text-primary block truncate" title={displayName}>
+                        {displayName}
+                      </span>
+                      <span className="lg:hidden block text-xs text-text-secondary truncate mt-0.5">
+                        {location || "—"}
+                      </span>
+                    </td>
+                    <td className="hidden lg:table-cell py-4 px-6 text-text-secondary max-w-[10rem]">
+                      <span className="block truncate" title={location}>
+                        {location || "—"}
+                      </span>
+                    </td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-text-secondary whitespace-nowrap">
+                      {item.createdAt ? formatThaiDate(timestampToDate(item.createdAt)) : "—"}
+                    </td>
+                    <td className="py-3 lg:py-4 px-4 lg:px-6">
+                      <span
+                        className={cn(
+                          "inline-flex px-3 py-1 rounded-full text-xs font-medium",
+                          statusConfig.bgColor,
+                          statusConfig.color
+                        )}
+                      >
+                        {statusConfig.label}
+                      </span>
+                    </td>
+                    <td
                       className={cn(
-                        "px-3 py-1 rounded-full text-xs font-medium",
-                        getItemStatusConfig(item).bgColor,
-                        getItemStatusConfig(item).color
+                        "py-3 lg:py-4 px-4 lg:px-6 sticky right-0 bg-bg-card",
+                        prefersHover && "group-hover/row:bg-bg-secondary/80"
                       )}
                     >
-                      {getItemStatusConfig(item).label}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedItem(item);
-                          setShowModal(true);
-                        }}
-                        className="p-2 text-gray-400 hover:text-[#06C755] hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                        title="ดูรายละเอียด"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item)}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                        title="ลบ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openItem(item)}
+                          className={cn(
+                            iconActionClass,
+                            "active:bg-line-green-light active:text-line-green-dark",
+                            prefersHover && "hover:text-line-green-dark hover:bg-line-green-light"
+                          )}
+                          aria-label={`ดูรายละเอียด ${displayName}`}
+                          title="ดูรายละเอียด"
+                        >
+                          <Eye className="w-4 h-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(item)}
+                          disabled={busy}
+                          className={cn(
+                            iconActionClass,
+                            "disabled:opacity-50 active:bg-status-error-light active:text-status-error",
+                            prefersHover && "hover:text-status-error hover:bg-status-error-light"
+                          )}
+                          aria-label={`ลบ ${displayName}`}
+                          title="ลบ"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
-          {(activeTab === "lost" ? filteredLostItems : filteredFoundItems).length === 0 && (
-            <div className="py-12 text-center text-gray-500">ไม่พบรายการ</div>
+          {visibleItems.length === 0 && (
+            <ItemsEmptyState
+              activeTab={activeTab}
+              hasActiveFilters={hasActiveFilters}
+              otherTabCount={otherTabCount}
+              onClear={clearFilters}
+              onSwitchTab={() => switchTab(activeTab === "lost" ? "found" : "lost")}
+            />
           )}
         </div>
 
-        {/* Mobile Cards */}
-        <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-          {(activeTab === "lost" ? filteredLostItems : filteredFoundItems).map((item) => (
-            <div
-              key={item.id}
-              className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-              onClick={() => {
-                setSelectedItem(item);
-                setShowModal(true);
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {getItemDisplayName(item)}
-                  </p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    <span className="font-mono text-[#06C755]">{item.trackingCode}</span>
-                    <span className="mx-2">•</span>
-                    {"locationLost" in item ? item.locationLost : item.locationFound}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {item.createdAt ? formatThaiDate(timestampToDate(item.createdAt)) : "-"}
-                  </p>
-                </div>
-                <span
+        <div className="md:hidden divide-y divide-border-light">
+          {visibleItems.map((item) => {
+            const displayName = getItemDisplayName(item);
+            const location =
+              "locationLost" in item ? item.locationLost : item.locationFound;
+            const statusConfig = getItemStatusConfig(item);
+            return (
+              <div key={item.id} className="flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => openItem(item)}
                   className={cn(
-                    "px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap",
-                    getItemStatusConfig(item).bgColor,
-                    getItemStatusConfig(item).color
+                    "flex-1 min-w-0 text-left px-4 py-3.5 active:bg-bg-secondary/80 motion-safe:transition-colors motion-safe:duration-200",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-green/35"
                   )}
+                  aria-label={`ดูรายละเอียด ${displayName} รหัส ${item.trackingCode}`}
                 >
-                  {getItemStatusConfig(item).label}
-                </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-text-primary truncate">{displayName}</p>
+                      <p className="text-sm text-text-secondary mt-1 truncate">
+                        <span className="font-mono text-line-green-link">{item.trackingCode}</span>
+                        <span className="mx-2" aria-hidden>
+                          •
+                        </span>
+                        <span>{location || "—"}</span>
+                      </p>
+                      <p className="text-xs text-text-secondary mt-1">
+                        {item.createdAt ? formatThaiDate(timestampToDate(item.createdAt)) : "—"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <span
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap",
+                          statusConfig.bgColor,
+                          statusConfig.color
+                        )}
+                      >
+                        {statusConfig.label}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-text-tertiary" aria-hidden />
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(item)}
+                  disabled={busy}
+                  className={cn(
+                    "shrink-0 self-stretch px-3 min-w-11 border-l border-border-light text-text-secondary",
+                    "active:bg-status-error-light active:text-status-error disabled:opacity-50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-green/35"
+                  )}
+                  aria-label={`ลบ ${displayName}`}
+                >
+                  <Trash2 className="w-4 h-4 mx-auto" aria-hidden />
+                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {(activeTab === "lost" ? filteredLostItems : filteredFoundItems).length === 0 && (
-            <div className="py-12 text-center text-gray-500">ไม่พบรายการ</div>
+          {visibleItems.length === 0 && (
+            <ItemsEmptyState
+              activeTab={activeTab}
+              hasActiveFilters={hasActiveFilters}
+              otherTabCount={otherTabCount}
+              onClear={clearFilters}
+              onSwitchTab={() => switchTab(activeTab === "lost" ? "found" : "lost")}
+            />
           )}
         </div>
       </div>
 
       <ResponsiveModal
         open={showModal && !!selectedItem}
-        onClose={() => setShowModal(false)}
+        onClose={() => {
+          if (busy) return;
+          setShowModal(false);
+        }}
         title="รายละเอียด"
         size="lg"
         footer={
           selectedItem ? (
-            <div className="flex gap-3 w-full">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full">
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                disabled={busy}
+                className="flex-1 min-h-11 py-3 rounded-full bg-bg-tertiary text-text-primary font-medium active:bg-border-light hover:bg-border-light motion-safe:transition-colors motion-safe:duration-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2"
               >
                 ปิด
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(selectedItem)}
-                className="py-3 px-6 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors flex items-center gap-2"
+                onClick={() => void handleDelete(selectedItem)}
+                disabled={busy}
+                className="sm:shrink-0 min-h-11 py-3 px-6 rounded-full bg-status-error-light text-red-800 dark:text-red-200 font-medium hover:bg-status-error hover:text-white active:bg-status-error active:text-white motion-safe:transition-colors motion-safe:duration-200 flex items-center justify-center gap-2 disabled:opacity-50 ring-1 ring-status-error/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-error/40 focus-visible:ring-offset-2"
               >
-                <Trash2 className="w-4 h-4" />
+                {deleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 className="w-4 h-4" aria-hidden />
+                )}
                 ลบ
               </button>
             </div>
@@ -548,154 +1167,166 @@ export default function AdminItemsPage() {
         }
       >
         {selectedItem && (
-            <div className="space-y-4">
-              {/* Image (for found items) */}
-              {"photoUrl" in selectedItem && selectedItem.photoUrl && (
-                <div className="relative w-full h-48 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700">
-                  <Image
-                    src={selectedItem.photoUrl}
-                    alt="รูปของเจอ"
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-sm text-gray-500">รหัสติดตาม</label>
-                <p className="font-mono text-lg text-[#06C755]">{selectedItem.trackingCode}</p>
+          <div className="space-y-4">
+            {"photoUrl" in selectedItem && selectedItem.photoUrl && (
+              <div className="relative w-full h-40 sm:h-48 md:h-56 rounded-xl overflow-hidden bg-bg-tertiary">
+                <Image
+                  src={selectedItem.photoUrl}
+                  alt={`รูปของเจอ ${getItemDisplayName(selectedItem)}`}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
               </div>
+            )}
 
-              {isLostItem(selectedItem) && (
-                <>
-                  <div>
-                    <label className="text-sm text-gray-500">สิ่งของ</label>
-                    <p className="text-gray-900 dark:text-white">{selectedItem.itemName}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-500">หมวดหมู่</label>
-                    <p className="text-gray-900 dark:text-white">
-                      {categories.find((c) => c.value === selectedItem.category)?.icon}{" "}
-                      {categories.find((c) => c.value === selectedItem.category)?.label}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-500">สถานที่หาย</label>
-                    <p className="text-gray-900 dark:text-white">{selectedItem.locationLost}</p>
-                  </div>
-                  {selectedItem.contacts && selectedItem.contacts.length > 0 && (
-                    <div>
-                      <label className="text-sm text-gray-500">ช่องทางติดต่อ</label>
-                      <div className="space-y-1">
-                        {selectedItem.contacts.map((contact, idx) => (
-                          <p key={idx} className="text-gray-900 dark:text-white">
-                            {contact.type}: {contact.value}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+            <DetailField label="รหัสติดตาม">
+              <p className="font-mono text-lg text-line-green-link">{selectedItem.trackingCode}</p>
+            </DetailField>
 
-              {isFoundItem(selectedItem) && (
-                <>
-                  <div>
-                    <label className="text-sm text-gray-500">รายละเอียด</label>
-                    <p className="text-gray-900 dark:text-white">{selectedItem.description}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-500">สถานที่เจอ</label>
-                    <p className="text-gray-900 dark:text-white">{selectedItem.locationFound}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-500">จุดส่งมอบ</label>
-                    <p className="text-gray-900 dark:text-white">
-                      {getDropOffLocationLabel(selectedItem.dropOffLocation, locations)}
+            {isLostItem(selectedItem) && (
+              <>
+                <DetailField label="สิ่งของ">
+                  <p>{selectedItem.itemName}</p>
+                </DetailField>
+                {selectedItem.studentId && (
+                  <DetailField label="รหัสนักเรียน">
+                    <p className="font-mono">{selectedItem.studentId}</p>
+                  </DetailField>
+                )}
+                <DetailField label="หมวดหมู่">
+                  <p>
+                    {categories.find((c) => c.value === selectedItem.category)?.icon}{" "}
+                    {categories.find((c) => c.value === selectedItem.category)?.label ||
+                      selectedItem.category}
+                  </p>
+                </DetailField>
+                <DetailField label="สถานที่หาย">
+                  <p>{selectedItem.locationLost}</p>
+                </DetailField>
+                {selectedItem.contacts && selectedItem.contacts.length > 0 && (
+                  <DetailField label="ช่องทางติดต่อ">
+                    <ul className="space-y-1">
+                      {selectedItem.contacts.map((contact, idx) => (
+                        <li key={`${contact.type}-${idx}`}>
+                          {contact.type}: {contact.value}
+                        </li>
+                      ))}
+                    </ul>
+                  </DetailField>
+                )}
+              </>
+            )}
+
+            {isFoundItem(selectedItem) && (
+              <>
+                <DetailField label="รายละเอียด">
+                  <p>{selectedItem.description}</p>
+                </DetailField>
+                <DetailField label="สถานที่เจอ">
+                  <p>{selectedItem.locationFound}</p>
+                </DetailField>
+                <DetailField label="จุดส่งมอบ">
+                  <p>{getDropOffLocationLabel(selectedItem.dropOffLocation, locations)}</p>
+                </DetailField>
+                {resolveHandoverDeadlineAt(selectedItem, appSettings) && (
+                  <div className={cn(feedbackVariantStyles.warning.panelClass, "text-sm")}>
+                    <p className={cn("font-medium", feedbackVariantStyles.warning.titleClass)}>
+                      กำหนดส่งห้องบุคคลภายใน
                     </p>
+                    <p className={cn("mt-1", feedbackVariantStyles.warning.messageClass)}>
+                      {formatHandoverDeadlineThai(
+                        resolveHandoverDeadlineAt(selectedItem, appSettings)!
+                      )}
+                    </p>
+                    {isHandoverPastDeadline(selectedItem, appSettings) && (
+                      <p className="text-red-800 dark:text-red-300 text-xs mt-2 font-medium">
+                        เลยกำหนดเวลาแล้ว — ควรถูกตั้งเป็นหมดอายุ
+                      </p>
+                    )}
                   </div>
-                  {resolveHandoverDeadlineAt(selectedItem, appSettings) && (
-                    <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-sm">
-                      <p className="font-medium text-amber-900 dark:text-amber-200">
-                        กำหนดส่งห้องบุคคลภายใน
+                )}
+                {selectedItem.roomHandoverConfirmed && (
+                  <div className="rounded-xl bg-line-green-light border border-line-green/35 p-3 text-sm">
+                    <p className="font-medium text-line-green-dark dark:text-line-green">
+                      ยืนยันถึงห้องบุคคลแล้ว
+                    </p>
+                    {selectedItem.roomHandoverConfirmedByName && (
+                      <p className="text-line-green-dark/80 dark:text-line-green/80 mt-1">
+                        โดย {selectedItem.roomHandoverConfirmedByName}
+                        {selectedItem.roomHandoverConfirmedAt
+                          ? ` • ${formatThaiDate(timestampToDate(selectedItem.roomHandoverConfirmedAt))}`
+                          : ""}
                       </p>
-                      <p className="text-amber-800 dark:text-amber-300 mt-1">
-                        {formatHandoverDeadlineThai(
-                          resolveHandoverDeadlineAt(selectedItem, appSettings)!
-                        )}
-                      </p>
-                      {isHandoverPastDeadline(selectedItem, appSettings) && (
-                        <p className="text-red-600 dark:text-red-400 text-xs mt-2 font-medium">
-                          เลยกำหนดเวลาแล้ว — ควรถูกตั้งเป็นหมดอายุ
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {selectedItem.roomHandoverConfirmed && (
-                    <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm">
-                      <p className="font-medium text-green-800 dark:text-green-300">
-                        ยืนยันถึงห้องบุคคลแล้ว
-                      </p>
-                      {selectedItem.roomHandoverConfirmedByName && (
-                        <p className="text-green-700/90 dark:text-green-400/90 mt-1">
-                          โดย {selectedItem.roomHandoverConfirmedByName}
-                          {selectedItem.roomHandoverConfirmedAt
-                            ? ` • ${formatThaiDate(timestampToDate(selectedItem.roomHandoverConfirmedAt))}`
-                            : ""}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {isFoundPendingRoomConfirm(selectedItem.status) &&
-                    !isHandoverPastDeadline(selectedItem, appSettings) && (
+                    )}
+                  </div>
+                )}
+                {isFoundPendingRoomConfirm(selectedItem.status) &&
+                  !isHandoverPastDeadline(selectedItem, appSettings) && (
                     <button
                       type="button"
                       onClick={() => void handleConfirmRoomHandover(selectedItem)}
-                      disabled={updating}
-                      className="w-full py-3 rounded-xl bg-[#06C755] text-white font-semibold hover:bg-[#05b34d] disabled:opacity-50 flex items-center justify-center gap-2"
+                      disabled={busy}
+                      className="w-full min-h-11 py-3 rounded-full bg-line-green-cta text-white font-semibold hover:bg-line-green-cta-hover active:bg-line-green-cta-hover disabled:opacity-50 flex items-center justify-center gap-2 motion-safe:transition-colors motion-safe:duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2"
                     >
                       {updating ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
                       ) : (
-                        <CheckCircle2 className="w-4 h-4" />
+                        <CheckCircle2 className="w-4 h-4" aria-hidden />
                       )}
                       ยืนยันถึงห้องบุคคลแล้ว
                     </button>
                   )}
-                </>
-              )}
+              </>
+            )}
 
-              <div>
-                <label className="text-sm text-gray-500 block mb-2">อัปเดตสถานะ</label>
-                <div className="flex flex-wrap gap-2">
-                  {(isLostItem(selectedItem)
-                    ? (["searching", "found", "claimed"] as ItemStatus[])
-                    : (["pending_room_confirm", "found", "claimed"] as ItemStatus[])
-                  ).map((status) => (
+            <div>
+              <p className="text-sm text-text-secondary mb-2" id="status-update-label">
+                อัปเดตสถานะ
+              </p>
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-labelledby="status-update-label"
+                aria-busy={updating}
+              >
+                {(isLostItem(selectedItem)
+                  ? (["searching", "found", "claimed"] as ItemStatus[])
+                  : (["pending_room_confirm", "found", "claimed"] as ItemStatus[])
+                ).map((status) => {
+                  const isCurrent = selectedItem.status === status;
+                  const label =
+                    isLostItem(selectedItem) && status === "found"
+                      ? "พบของแล้ว"
+                      : STATUS_CONFIG[status].label;
+                  return (
                     <button
                       key={status}
-                      onClick={() => handleStatusUpdate(selectedItem, status)}
-                      disabled={updating || selectedItem.status === status}
+                      type="button"
+                      onClick={() => void handleStatusUpdate(selectedItem, status)}
+                      disabled={busy || isCurrent}
+                      aria-pressed={isCurrent}
                       className={cn(
-                        "px-4 py-2 rounded-full text-sm font-medium transition-all",
-                        selectedItem.status === status
+                        "min-h-11 px-4 py-2 rounded-full text-sm font-medium motion-safe:transition-colors motion-safe:duration-200 disabled:opacity-60",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/35 focus-visible:ring-offset-2",
+                        isCurrent
                           ? `${STATUS_CONFIG[status].bgColor} ${STATUS_CONFIG[status].color} ring-2 ring-offset-2 ring-current`
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+                          : "bg-bg-tertiary text-text-secondary active:bg-border-light hover:bg-border-light"
                       )}
                     >
-                      {updating ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : isLostItem(selectedItem) && status === "found" ? (
-                        "พบของแล้ว"
-                      ) : (
-                        STATUS_CONFIG[status].label
-                      )}
+                      {label}
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
+              {updating && (
+                <p className="mt-2 text-sm text-text-secondary inline-flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                  กำลังอัปเดตสถานะ...
+                </p>
+              )}
             </div>
+          </div>
         )}
       </ResponsiveModal>
       {dialog}

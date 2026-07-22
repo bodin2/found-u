@@ -429,6 +429,8 @@ export interface LostItem {
   dateLost: Date;
   contacts: ContactInfo[]; // ช่องทางการติดต่อ
   userId?: string; // Supabase Auth UID
+  /** เลขประจำตัวนักเรียน (ถ้ามี) — คอลัมน์ student_id */
+  studentId?: string;
   status: ItemStatus;
   createdAt: Date;
   updatedAt: Date;

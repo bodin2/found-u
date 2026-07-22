@@ -124,6 +124,7 @@ function mapLostItemRow(row: DbRow): LostItem {
     dateLost: timestampToDate(row.date_lost),
     contacts: (Array.isArray(row.contacts) ? row.contacts : []) as ContactInfo[],
     userId: asNullableString(row.user_id),
+    studentId: asNullableString(row.student_id),
     status: asString(row.status) as ItemStatus,
     createdAt: timestampToDate(row.created_at),
     updatedAt: timestampToDate(row.updated_at),
