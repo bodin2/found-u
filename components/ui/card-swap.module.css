@@ -14,8 +14,8 @@
   left: 50%;
   height: auto;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: #050505;
+  border: 1px solid var(--border-light, #e5e7eb);
+  background: var(--bg-card, #ffffff);
   transform-style: preserve-3d;
   will-change: transform;
   backface-visibility: hidden;

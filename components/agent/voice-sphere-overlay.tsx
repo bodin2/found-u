@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useId, useRef } from "react";
 import { X, Mic } from "lucide-react";
 import { m, AnimatePresence } from "framer-motion";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { MotionProvider } from "@/components/motion/motion-provider";
+import { duration, easeOut } from "@/lib/motion";
 import { thaiCopy } from "@/lib/copy/thai-student";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +18,13 @@ type VoiceSphereOverlayProps = {
   onTranscript: (text: string) => void;
 };
 
-export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereOverlayProps) {
+function VoiceSphereOverlayInner({ open, onClose, onTranscript }: VoiceSphereOverlayProps) {
+  const reduced = useReducedMotion();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useLockBodyScroll(open);
+  useFocusTrap(panelRef, { active: open, restoreFocus: true });
+
   const handleFinalTranscript = useCallback(
     (text: string) => {
       if (text.trim()) onTranscript(text.trim());
@@ -34,6 +45,26 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
     return () => stop();
   }, [open, isSupported, start, stop]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onClose]);
+
+  const fade = reduced
+    ? { duration: 0 }
+    : { duration: duration.fast, ease: easeOut };
+
+  const sheet = reduced
+    ? { duration: 0 }
+    : { duration: duration.normal, ease: easeOut };
+
   return (
     <AnimatePresence>
       {open ? (
@@ -41,23 +72,33 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/40 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="โหมดเสียง"
+          transition={fade}
+          className="overlay-modal fixed inset-0 z-[1000] flex items-end justify-center bg-black/40 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          role="presentation"
+          onClick={onClose}
         >
           <m.div
-            initial={{ opacity: 0, y: 16 }}
+            ref={panelRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            initial={reduced ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-md rounded-2xl bg-bg-primary border border-border-light p-5 shadow-md"
+            exit={reduced ? undefined : { opacity: 0, y: 16 }}
+            transition={sheet}
+            className="w-full max-w-md rounded-2xl border border-border-light bg-bg-primary p-5 shadow-card outline-none"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-text-primary">พูดถามได้เลย</h2>
-                <p className="text-sm text-text-secondary mt-0.5">
+                <h2
+                  id={titleId}
+                  className="text-balance text-base font-semibold leading-[1.4] text-text-primary"
+                >
+                  พูดถามได้เลย
+                </h2>
+                <p className="mt-0.5 text-sm text-text-secondary">
                   {isSupported
                     ? isListening
                       ? thaiCopy.voice.listening
@@ -68,10 +109,10 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
               <button
                 type="button"
                 onClick={onClose}
-                className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 touch-manipulation"
                 aria-label={thaiCopy.voice.close}
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" aria-hidden />
               </button>
             </div>
 
@@ -80,30 +121,31 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
                 <div className="flex flex-col items-center py-4">
                   <div
                     className={cn(
-                      "agent-avatar w-20 h-20 mb-4",
-                      isListening && "ring-2 ring-line-green/40 ring-offset-2 ring-offset-bg-primary"
+                      "agent-avatar mb-4 h-20 w-20",
+                      isListening &&
+                        "ring-2 ring-line-green/40 ring-offset-2 ring-offset-bg-primary"
                     )}
                     aria-hidden
                   >
-                    <Mic className="w-9 h-9" strokeWidth={2} />
+                    <Mic className="h-9 w-9" strokeWidth={2} />
                   </div>
                   {transcript ? (
-                    <p className="text-center text-text-primary text-base leading-relaxed px-2">
+                    <p className="px-2 text-center text-base leading-[1.5] text-text-primary">
                       {transcript}
                     </p>
                   ) : (
-                    <p className="text-sm text-text-tertiary text-center">
+                    <p className="text-center text-pretty text-sm text-text-secondary">
                       พูดชื่อสิ่งของ สถานที่ หรือรหัสติดตาม
                     </p>
                   )}
                   {error ? (
-                    <p className="mt-3 text-sm text-status-error text-center">{error}</p>
+                    <p className="mt-3 text-center text-sm text-status-error">{error}</p>
                   ) : null}
                 </div>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-full py-3 rounded-full bg-bg-tertiary text-text-primary font-medium hover:bg-border-light transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+                  className="w-full min-h-11 rounded-full bg-bg-tertiary py-3 font-medium text-text-primary transition-colors hover:bg-bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 touch-manipulation"
                 >
                   ปิด
                 </button>
@@ -112,7 +154,7 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full py-3 rounded-full bg-line-green text-white font-medium hover:bg-line-green-hover transition-colors"
+                className="w-full min-h-11 rounded-full bg-line-green-cta py-3 font-medium text-white transition-colors hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 touch-manipulation"
               >
                 ปิด
               </button>
@@ -121,5 +163,13 @@ export function VoiceSphereOverlay({ open, onClose, onTranscript }: VoiceSphereO
         </m.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+export function VoiceSphereOverlay(props: VoiceSphereOverlayProps) {
+  return (
+    <MotionProvider>
+      <VoiceSphereOverlayInner {...props} />
+    </MotionProvider>
   );
 }

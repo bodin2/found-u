@@ -41,14 +41,24 @@ export function StatusAlert({
         <Icon className={cn("w-5 h-5 shrink-0 mt-0.5", iconClass, centered && "mt-0")} aria-hidden />
         <div className={cn("min-w-0 flex-1", centered && "flex-1 w-full")}>
           {title ? (
-            <p className={cn("text-sm font-medium", titleClass)}>{title}</p>
+            <p className={cn("break-words text-base font-medium leading-[1.4]", titleClass)}>
+              {title}
+            </p>
           ) : null}
-          <p className={cn("text-sm leading-relaxed", title ? "mt-1" : "", messageClass)}>{message}</p>
+          <p
+            className={cn(
+              "break-words text-pretty text-base leading-[1.5]",
+              title ? "mt-1" : "",
+              messageClass
+            )}
+          >
+            {message}
+          </p>
           {action ? (
             <button
               type="button"
               onClick={action.onClick}
-              className="mt-2 text-sm font-medium text-line-green-link hover:text-line-green-link-hover underline underline-offset-2"
+              className="mt-2 min-h-11 inline-flex items-center text-sm font-medium text-line-green-link hover:text-line-green-link-hover underline underline-offset-2 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 rounded-sm"
             >
               {action.label}
             </button>

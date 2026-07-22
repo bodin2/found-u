@@ -14,7 +14,7 @@ export function ManualModeBar({ className }: ManualModeBarProps) {
     <div
       className={cn(
         "sticky top-0 z-40 px-4 py-2.5 shell-desktop:hidden",
-        "bg-bg-secondary/95 backdrop-blur-md border-b border-border-light/60",
+        "bg-bg-secondary border-b border-border-light",
         "flex justify-center",
         className
       )}

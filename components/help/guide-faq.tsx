@@ -11,7 +11,10 @@ export function GuideFaq({ sections }: GuideFaqProps) {
 
   return (
     <section className="space-y-3" aria-labelledby="help-faq-heading">
-      <h2 id="help-faq-heading" className="text-xl font-semibold text-text-primary">
+      <h2
+        id="help-faq-heading"
+        className="text-balance text-xl font-semibold leading-[1.3] text-text-primary"
+      >
         คำถามที่พบบ่อย
       </h2>
       <div className="space-y-2">
@@ -19,7 +22,7 @@ export function GuideFaq({ sections }: GuideFaqProps) {
           const blocks = parseHelpBody(section.body);
           return (
             <CollapsibleSection key={section.id} title={section.title}>
-              <div className="space-y-2 pt-3 text-sm leading-relaxed text-text-secondary">
+              <div className="space-y-2 pt-3 text-base leading-[1.5] text-text-secondary">
                 {blocks.map((block, index) =>
                   block.type === "list" ? (
                     <ul key={index} className="list-disc space-y-1 pl-5">

@@ -23,7 +23,8 @@ export const authLinkClass = cn(
 export const authHintClass = "text-xs text-text-secondary leading-relaxed";
 
 /** Form field labels — matches ValidatedField */
-export const authLabelClass = "block text-sm font-medium text-text-secondary mb-2";
+export const authLabelClass =
+  "mb-2 block text-xs font-medium leading-[1.3] text-text-secondary";
 
 /** Metadata keys in confirmation panels */
 export const authMetaLabelClass = "text-xs font-medium text-text-secondary";
@@ -111,9 +112,11 @@ export const authCardClass = "bg-bg-primary rounded-xl border border-border-ligh
 
 export const authCardHeaderClass = "space-y-2 mb-5";
 
-export const authCardTitleClass = "text-lg font-semibold text-text-primary text-balance";
+export const authCardTitleClass =
+  "text-balance text-xl font-semibold leading-[1.3] text-text-primary";
 
-export const authCardDescriptionClass = "text-sm text-text-secondary text-pretty leading-relaxed";
+export const authCardDescriptionClass =
+  "text-pretty text-base leading-[1.5] text-text-secondary";
 
 /** Tight stack for related fields / buttons */
 export const authFieldStackClass = "flex flex-col gap-3";

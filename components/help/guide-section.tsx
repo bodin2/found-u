@@ -36,10 +36,10 @@ export function GuideSection({
           </span>
         )}
         <div className="min-w-0 flex-1 space-y-3">
-          <h2 className="text-lg font-semibold leading-snug text-text-primary">
+          <h2 className="text-balance text-xl font-semibold leading-[1.3] text-text-primary">
             {title}
           </h2>
-          <div className="space-y-3 text-base leading-relaxed text-text-primary">
+          <div className="space-y-3 text-base leading-[1.5] text-text-primary">
             {blocks.map((block, index) =>
               block.type === "list" ? (
                 <ul key={index} className="list-disc space-y-1.5 pl-5 text-text-secondary">

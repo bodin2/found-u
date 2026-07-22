@@ -57,8 +57,10 @@ export default function Sidebar() {
             className="h-11 w-11 object-contain"
           />
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-text-primary leading-tight">Found-U</h1>
-            <p className="text-xs text-text-secondary">Lost & Found</p>
+            <h1 className="text-balance text-base font-semibold leading-[1.4] text-text-primary">
+              Found-U
+            </h1>
+            <p className="text-xs leading-[1.3] text-text-secondary">ของหายของเจอ</p>
           </div>
         </Link>
 
@@ -69,10 +71,10 @@ export default function Sidebar() {
         <div className="bg-bg-secondary rounded-xl p-3 min-h-14 flex items-center">
           {authLoading && !user ? (
             <div className="flex items-center gap-3 w-full" aria-hidden>
-              <div className="h-10 w-10 rounded-full bg-bg-tertiary animate-pulse shrink-0" />
+              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-bg-tertiary motion-reduce:animate-none" />
               <div className="flex-1 space-y-2">
-                <div className="h-3.5 w-28 rounded bg-bg-tertiary animate-pulse" />
-                <div className="h-3 w-36 rounded bg-bg-tertiary animate-pulse" />
+                <div className="h-3.5 w-28 animate-pulse rounded bg-bg-tertiary motion-reduce:animate-none" />
+                <div className="h-3 w-36 animate-pulse rounded bg-bg-tertiary motion-reduce:animate-none" />
               </div>
             </div>
           ) : user ? (
@@ -86,9 +88,9 @@ export default function Sidebar() {
             <button
               type="button"
               onClick={handleSignIn}
-              className="w-full px-4 py-2.5 bg-line-green hover:bg-line-green-hover text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-line-green-cta px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2 touch-manipulation"
             >
-              <LogIn className="w-4 h-4" />
+              <LogIn className="h-4 w-4" aria-hidden />
               เข้าสู่ระบบ
             </button>
           )}
@@ -104,32 +106,34 @@ export default function Sidebar() {
           const isActive = pathname === item.href;
 
           return (
-            <Link key={item.href} href={item.href}>
-              <div
-                className={cn(
-                  "px-3 py-2.5 rounded-lg transition-colors cursor-pointer group",
-                  isActive ? "bg-line-green/10" : "bg-bg-secondary hover:bg-bg-tertiary"
-                )}
-              >
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "block rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30",
+                isActive ? "bg-line-green/10" : "bg-bg-secondary hover:bg-bg-tertiary"
+              )}
+            >
+              <div className="cursor-pointer group px-3 py-2.5">
                 <div className="flex items-center gap-3">
                   <Icon
                     className={cn(
-                      "w-5 h-5 shrink-0 transition-colors",
+                      "h-5 w-5 shrink-0 transition-colors",
                       isActive
                         ? "text-line-green"
                         : "text-text-secondary group-hover:text-line-green"
                     )}
                   />
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p
                       className={cn(
-                        "font-medium text-sm transition-colors leading-snug",
+                        "text-sm font-medium leading-snug transition-colors",
                         isActive ? "text-line-green" : "text-text-primary"
                       )}
                     >
                       {item.title}
                     </p>
-                    <p className="text-xs text-text-secondary line-clamp-1">{item.subtitle}</p>
+                    <p className="line-clamp-1 text-xs text-text-secondary">{item.subtitle}</p>
                   </div>
                 </div>
               </div>
@@ -140,42 +144,44 @@ export default function Sidebar() {
 
       <div className="shrink-0 flex flex-col gap-1.5 p-3 border-t border-border-light pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {user ? (
-          <Link href="/settings">
-            <div className="px-3 py-2.5 rounded-lg bg-bg-secondary hover:bg-bg-tertiary text-text-primary text-sm font-medium flex items-center gap-2 transition-colors cursor-pointer min-h-11">
-              <Settings className="w-4 h-4 shrink-0" />
-              ตั้งค่า
-            </div>
+          <Link
+            href="/settings"
+            className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg bg-bg-secondary px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+          >
+            <Settings className="h-4 w-4 shrink-0" aria-hidden />
+            ตั้งค่า
           </Link>
         ) : null}
         {isAdmin ? (
-          <Link href="/admin">
-            <div className="px-3 py-2.5 rounded-lg bg-bg-secondary hover:bg-bg-tertiary text-text-primary text-sm font-medium flex items-center gap-2 transition-colors cursor-pointer min-h-11">
-              <Shield className="w-4 h-4 shrink-0" />
-              Admin Panel
-            </div>
+          <Link
+            href="/admin"
+            className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg bg-bg-secondary px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+          >
+            <Shield className="h-4 w-4 shrink-0" aria-hidden />
+            แผงผู้ดูแล
           </Link>
         ) : null}
         <button
           type="button"
           onClick={() => setTheme(isDarkTheme ? "light" : "dark")}
-          className="w-full px-3 py-2.5 rounded-lg bg-bg-secondary hover:bg-bg-tertiary text-text-primary text-sm font-medium flex items-center gap-2 transition-colors min-h-11"
+          className="flex min-h-11 w-full items-center gap-2 rounded-lg bg-bg-secondary px-3 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 touch-manipulation"
           aria-label="สลับโหมดสว่าง/มืด"
         >
           {themeMounted ? (
             isDarkTheme ? (
               <>
-                <Sun className="w-4 h-4 shrink-0" />
-                Light Mode
+                <Sun className="h-4 w-4 shrink-0" aria-hidden />
+                โหมดสว่าง
               </>
             ) : (
               <>
-                <Moon className="w-4 h-4 shrink-0" />
-                Dark Mode
+                <Moon className="h-4 w-4 shrink-0" aria-hidden />
+                โหมดมืด
               </>
             )
           ) : (
             <>
-              <span className="w-4 h-4 shrink-0" aria-hidden />
+              <span className="h-4 w-4 shrink-0" aria-hidden />
               โหมดสี
             </>
           )}

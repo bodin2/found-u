@@ -88,7 +88,7 @@ async function renderBlock(
       return (
         <p
           key={key}
-          className="text-pretty text-base leading-relaxed text-text-secondary"
+          className="text-pretty text-base leading-[1.5] text-text-secondary"
         >
           {renderInline(node.content, key)}
         </p>
@@ -96,17 +96,21 @@ async function renderBlock(
 
     case "heading": {
       const level = Number(node.attrs?.level ?? 2);
-      const className =
-        "text-balance font-semibold tracking-tight text-text-primary";
       if (level === 3) {
         return (
-          <h3 key={key} className={cn(className, "mt-6 text-lg")}>
+          <h3
+            key={key}
+            className="mt-6 text-balance text-base font-medium leading-[1.4] text-text-primary"
+          >
             {renderInline(node.content, key)}
           </h3>
         );
       }
       return (
-        <h2 key={key} className={cn(className, "mt-8 text-xl md:text-2xl")}>
+        <h2
+          key={key}
+          className="mt-8 text-balance text-xl font-semibold leading-[1.3] text-text-primary"
+        >
           {renderInline(node.content, key)}
         </h2>
       );
@@ -116,7 +120,7 @@ async function renderBlock(
       return (
         <ul
           key={key}
-          className="list-disc space-y-1.5 pl-5 text-base leading-relaxed text-text-secondary"
+          className="list-disc space-y-1.5 pl-5 text-base leading-[1.5] text-text-secondary"
         >
           {(node.content ?? []).map((item, i) => (
             <li key={`${key}-li-${i}`}>
@@ -130,7 +134,7 @@ async function renderBlock(
       return (
         <ol
           key={key}
-          className="list-decimal space-y-1.5 pl-5 text-base leading-relaxed text-text-secondary"
+          className="list-decimal space-y-1.5 pl-5 text-base leading-[1.5] text-text-secondary"
         >
           {(node.content ?? []).map((item, i) => (
             <li key={`${key}-li-${i}`}>
@@ -144,7 +148,7 @@ async function renderBlock(
       return (
         <blockquote
           key={key}
-          className="border-l-4 border-line-green-cta/40 pl-4 italic text-text-secondary"
+          className="rounded-xl bg-bg-secondary px-4 py-3 text-text-secondary"
         >
           {(node.content ?? []).map((child, i) => (
             <p key={`${key}-q-${i}`} className="text-pretty leading-relaxed">
@@ -209,10 +213,12 @@ async function renderBlock(
             {stepNumber.current}
           </span>
           <div className="min-w-0 pt-0.5">
-            <p className="text-xs font-medium uppercase tracking-wide text-line-green-link">
-              Step {stepNumber.current}
+            <p className="text-xs font-medium text-text-secondary mb-0.5">
+              ขั้นตอน {stepNumber.current}
             </p>
-            <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+            <h3 className="text-balance text-base font-medium leading-[1.4] text-text-primary">
+              {title}
+            </h3>
           </div>
         </div>
       );

@@ -31,7 +31,10 @@ function getStepStatus(part: {
 }
 
 function StatusIcon({ status }: { status: StepStatus }) {
-  if (status === "running") return <Loader2 className="w-3.5 h-3.5 animate-spin text-line-green" />;
+  if (status === "running")
+    return (
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-line-green motion-reduce:animate-none" />
+    );
   if (status === "done") return <CheckCircle2 className="w-3.5 h-3.5 text-line-green" />;
   if (status === "error") return <XCircle className="w-3.5 h-3.5 text-status-error" />;
   return <Circle className="w-3.5 h-3.5 text-text-tertiary" />;

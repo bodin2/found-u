@@ -21,10 +21,10 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   return (
     <ul className="validation-summary__list space-y-1.5 mt-2">
       {issues.map((issue) => (
-        <li key={`${issue.fieldId}-${issue.message}`} className="text-sm leading-relaxed">
+        <li key={`${issue.fieldId}-${issue.message}`} className="text-base leading-[1.5]">
           <button
             type="button"
-            className="validation-summary__link"
+            className="validation-summary__link inline-flex min-h-11 items-center touch-manipulation rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
             onClick={() => scrollToField(issue.fieldId)}
           >
             {issue.fieldLabel}
@@ -54,7 +54,7 @@ export function ValidationSummary({
       <div className="flex gap-3">
         <Icon className={cn("w-5 h-5 shrink-0 mt-0.5", iconClass)} aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className={cn("text-sm font-medium", titleClass)}>{heading}</p>
+          <p className={cn("text-base font-medium leading-[1.4]", titleClass)}>{heading}</p>
           <IssueList issues={issues} />
         </div>
       </div>

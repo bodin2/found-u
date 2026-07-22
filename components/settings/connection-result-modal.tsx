@@ -90,9 +90,9 @@ export function ConnectionResultModal({
       type="button"
       onClick={onClose}
       disabled={loading}
-      className="w-full py-2.5 rounded-xl bg-line-green text-white text-sm font-medium disabled:opacity-60"
+      className="w-full min-h-11 rounded-full bg-line-green-cta py-3 text-base font-medium text-white hover:bg-line-green-cta-hover disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2 touch-manipulation"
     >
-      {loading ? "กรุณารอสักครู่..." : "ตกลง"}
+      {loading ? "กรุณารอสักครู่…" : "ตกลง"}
     </button>
   );
 
@@ -109,24 +109,31 @@ export function ConnectionResultModal({
     >
       {loading ? (
         <div className="flex flex-col items-center justify-center py-8 gap-4">
-          <Loader2 className="w-10 h-10 animate-spin text-line-green" />
-          <p className="text-sm text-text-secondary text-center">ระบบกำลังบันทึกและตรวจสอบสถานะบัญชี</p>
+          <Loader2 className="h-10 w-10 animate-spin text-line-green motion-reduce:animate-none" aria-hidden />
+          <p className="text-center text-pretty text-base leading-[1.5] text-text-secondary">
+            ระบบกำลังบันทึกและตรวจสอบสถานะบัญชี
+          </p>
         </div>
       ) : result ? (
         <div className="space-y-4 pb-2">
           <div
             className={cn(
               "flex items-center gap-3 rounded-xl px-4 py-3",
-              isSuccess ? "bg-line-green/10" : "bg-red-500/10"
+              isSuccess ? "bg-line-green-light" : "bg-status-error-light"
             )}
           >
             {isSuccess ? (
-              <CheckCircle2 className="w-6 h-6 text-line-green shrink-0" />
+              <CheckCircle2 className="w-6 h-6 text-line-green shrink-0" aria-hidden />
             ) : (
-              <XCircle className="w-6 h-6 text-red-500 shrink-0" />
+              <XCircle className="w-6 h-6 text-status-error shrink-0" aria-hidden />
             )}
             <div className="min-w-0">
-              <p className={cn("text-sm font-medium", isSuccess ? "text-line-green" : "text-red-600")}>
+              <p
+                className={cn(
+                  "text-sm font-medium",
+                  isSuccess ? "text-line-green-link" : "text-status-error"
+                )}
+              >
                 {isSuccess ? "สถานะ: พร้อมใช้งาน" : "สถานะ: ไม่สำเร็จ"}
               </p>
               <p className="text-xs text-text-secondary mt-0.5">
@@ -162,7 +169,7 @@ export function ConnectionResultModal({
           )}
 
           {isSuccess && (
-            <p className="text-xs text-text-tertiary leading-relaxed">
+            <p className="text-pretty text-xs leading-[1.5] text-text-secondary">
               Passkey ผูกกับโดเมนที่ลงทะเบียน — หากเข้าเว็บคนละโดเมน ต้องลงทะเบียน Passkey ใหม่บนโดเมนนั้น
             </p>
           )}
@@ -172,7 +179,7 @@ export function ConnectionResultModal({
           )}
         </div>
       ) : (
-        <div className="flex items-center gap-2 py-4 text-sm text-text-secondary">
+        <div className="flex items-center gap-2 py-4 text-base leading-[1.5] text-text-secondary">
           <User className="w-4 h-4" />
           ไม่พบข้อมูลสถานะ
         </div>

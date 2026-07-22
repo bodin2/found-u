@@ -8,7 +8,7 @@ const MapCanvasDynamic = dynamic(() => import("@/components/ui/map-canvas"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full min-h-[200px] rounded-xl bg-bg-tertiary flex items-center justify-center">
-      <Loader2 className="w-6 h-6 animate-spin text-line-green" />
+      <Loader2 className="h-6 w-6 animate-spin text-line-green motion-reduce:animate-none" />
     </div>
   ),
 });

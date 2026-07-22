@@ -87,7 +87,7 @@ export function FormStepper({
                 </span>
                 <span
                   className={cn(
-                    "mt-2 w-full text-center text-[11px] sm:text-xs font-medium leading-snug px-0.5 break-words",
+                    "mt-2 w-full text-center text-xs font-medium leading-[1.3] px-0.5 break-words",
                     active
                       ? tone === "quiet"
                         ? "text-text-primary"

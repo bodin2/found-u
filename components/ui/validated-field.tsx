@@ -44,7 +44,13 @@ export function ValidatedField({
 
   return (
     <div className={className}>
-      <label htmlFor={id} className={cn("block text-sm font-medium text-text-secondary mb-2", labelClassName)}>
+      <label
+        htmlFor={id}
+        className={cn(
+          "mb-2 block text-xs font-medium leading-[1.3] text-text-secondary",
+          labelClassName
+        )}
+      >
         {label}
         {required ? <span className="text-[var(--status-error)]"> *</span> : null}
       </label>

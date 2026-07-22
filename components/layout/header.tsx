@@ -31,7 +31,7 @@ export default function Header({
     <header
       className={cn(
         "sticky top-0 z-30 flex items-center gap-3 px-4 py-3",
-        "bg-bg-primary/95 backdrop-blur-sm border-b border-border-light transition-colors",
+        "bg-bg-primary border-b border-border-light transition-colors",
         className
       )}
     >
@@ -40,7 +40,7 @@ export default function Header({
           <button
             type="button"
             onClick={handleBack}
-            className="flex items-center justify-center min-w-11 min-h-11 -ml-2 rounded-full hover:bg-bg-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+            className="flex items-center justify-center min-w-11 min-h-11 -ml-2 rounded-full hover:bg-bg-secondary transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
             aria-label="กลับ"
           >
             <ArrowLeft className="w-5 h-5 text-text-primary" />
@@ -48,7 +48,7 @@ export default function Header({
         ) : null}
       </div>
 
-      <h1 className="flex-1 text-center text-lg font-semibold text-text-primary truncate text-balance">
+      <h1 className="min-w-0 flex-1 truncate text-center text-balance text-base font-semibold leading-[1.4] text-text-primary">
         {title}
       </h1>
 

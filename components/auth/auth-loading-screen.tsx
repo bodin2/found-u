@@ -21,7 +21,10 @@ export function AuthLoadingScreen({
       aria-live="polite"
       aria-busy="true"
     >
-      <Loader2 className="w-8 h-8 animate-spin text-text-secondary" aria-hidden />
+      <Loader2
+        className="h-8 w-8 animate-spin text-text-secondary motion-reduce:animate-none"
+        aria-hidden
+      />
       <span className="sr-only">{message}</span>
     </div>
   );

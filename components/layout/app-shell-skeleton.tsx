@@ -63,7 +63,7 @@ function SidebarSkeleton() {
 
 function MobileHeaderSkeleton() {
   return (
-    <header className={cn("px-5 pt-6 pb-6 bg-gradient-to-br from-line-green to-line-green", shellMobileOnly)}>
+    <header className={cn("px-5 pt-6 pb-6 bg-line-green", shellMobileOnly)}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <SkeletonBar className="h-12 w-12 rounded-full bg-white/20 shrink-0" />

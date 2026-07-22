@@ -55,10 +55,12 @@ export function ItemResultCard({ item, className, isNew }: ItemResultCardProps) 
         />
       ) : null}
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-semibold text-text-primary text-sm line-clamp-2">{name}</h4>
+        <h4 className="line-clamp-2 text-base font-medium leading-[1.4] text-text-primary">
+          {name}
+        </h4>
         <span
           className={cn(
-            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full shrink-0",
+            "text-xs font-medium px-2 py-0.5 rounded-full shrink-0",
             item.type === "lost"
               ? "bg-status-error-light text-status-error"
               : "bg-line-green-light text-line-green"
@@ -71,12 +73,12 @@ export function ItemResultCard({ item, className, isNew }: ItemResultCardProps) 
         สถานะ: {statusLabels[item.status || ""] || item.status || "-"}
         {showTracking ? ` · ${item.trackingCode}` : ""}
       </p>
-      <p className="text-xs text-text-tertiary mt-1 truncate">📍 {location} · {dateLabel}</p>
+      <p className="text-xs text-text-secondary mt-1 truncate">{location} · {dateLabel}</p>
       <div className="flex gap-2 mt-3 pt-3 border-t border-border-light/60">
         {showTracking ? (
           <Link
             href={`/tracking?code=${encodeURIComponent(item.trackingCode!)}`}
-            className="flex-1 text-center text-xs font-medium py-2 rounded-xl bg-line-green text-white hover:bg-line-green-hover transition-colors"
+            className="flex-1 inline-flex items-center justify-center min-h-11 text-center text-sm font-medium px-3 py-2 rounded-full bg-line-green-cta text-white hover:bg-line-green-cta-hover transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2"
           >
             ติดตามรหัส
           </Link>
@@ -84,7 +86,7 @@ export function ItemResultCard({ item, className, isNew }: ItemResultCardProps) 
         <Link
           href="/list"
           className={cn(
-            "text-center text-xs font-medium py-2 rounded-xl bg-bg-tertiary text-text-primary hover:bg-bg-secondary transition-colors",
+            "inline-flex items-center justify-center min-h-11 text-center text-sm font-medium px-3 py-2 rounded-full bg-bg-tertiary text-text-primary hover:bg-bg-secondary transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30",
             showTracking ? "flex-1" : "w-full"
           )}
         >

@@ -223,10 +223,11 @@ export function HomeDashboardSection({
                   aria-haspopup="listbox"
                   aria-label="กรองประเภทรายการ"
                   className={cn(
-                    "flex items-center gap-1.5 min-h-11 px-3 py-2 rounded-lg border text-sm font-medium transition-colors",
+                    "flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors touch-manipulation",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30",
                     itemFilter !== "all" || filterOpen
                       ? "border-line-green/40 bg-line-green/10 text-line-green"
-                      : "border-border-light bg-bg-card text-text-secondary hover:text-text-primary hover:border-border-medium"
+                      : "border-border-light bg-bg-card text-text-secondary hover:border-border-medium hover:text-text-primary"
                   )}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
@@ -236,7 +237,7 @@ export function HomeDashboardSection({
                 {filterOpen && (
                   <div
                     role="listbox"
-                    className="absolute right-0 top-full z-30 mt-1.5 w-44 py-1 bg-bg-card border border-border-light rounded-xl shadow-card animate-fade-in"
+                    className="absolute right-0 top-full z-30 mt-1.5 w-44 rounded-xl border border-border-light bg-bg-card py-1 shadow-card motion-safe:animate-fade-in"
                   >
                     {ITEM_FILTER_OPTIONS.map(({ id, label, icon: Icon }) => {
                       const active = itemFilter === id;
@@ -251,15 +252,16 @@ export function HomeDashboardSection({
                             setFilterOpen(false);
                           }}
                           className={cn(
-                            "w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors",
+                            "flex w-full min-h-11 items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors touch-manipulation",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-green/30",
                             active
-                              ? "text-line-green bg-line-green/10"
+                              ? "bg-line-green/10 text-line-green"
                               : "text-text-primary hover:bg-bg-secondary"
                           )}
                         >
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span className="flex-1">{label}</span>
-                          {active && <Check className="w-4 h-4 shrink-0" />}
+                          <Icon className="w-4 h-4 shrink-0" aria-hidden />
+                          <span className="flex-1 truncate">{label}</span>
+                          {active && <Check className="w-4 h-4 shrink-0" aria-hidden />}
                         </button>
                       );
                     })}
@@ -269,10 +271,10 @@ export function HomeDashboardSection({
             )}
             <Link
               href={seeAllHref}
-              className="text-sm text-line-green font-medium hover:underline flex items-center gap-0.5"
+              className="inline-flex min-h-11 items-center gap-0.5 px-2 text-sm font-medium text-line-green-link hover:underline touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 rounded-sm"
             >
               ดูทั้งหมด
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4" aria-hidden />
             </Link>
           </div>
         )}
@@ -289,7 +291,7 @@ export function HomeDashboardSection({
             <button
               type="button"
               onClick={onSignIn}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-line-green text-white text-sm font-medium"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-line-green-cta px-5 py-2.5 text-sm font-medium text-white hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2 touch-manipulation"
             >
               <LogIn className="w-4 h-4" />
               เข้าสู่ระบบ
@@ -300,8 +302,15 @@ export function HomeDashboardSection({
         <DashboardListSkeleton rows={3} />
       ) : effectiveMainPanel === "items" ? (
         displayItems.length === 0 ? (
-          <div className="text-center py-8 text-text-secondary bg-bg-secondary rounded-2xl">
-            {emptyMessage}
+          <div className="rounded-2xl border border-border-light bg-bg-secondary py-8 text-center">
+            <Search className="mx-auto mb-3 h-10 w-10 text-text-tertiary" aria-hidden />
+            <p className="mb-4 text-pretty text-base text-text-secondary">{emptyMessage}</p>
+            <Link
+              href={itemFilter === "found" ? "/found" : "/lost"}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-line-green-cta px-5 py-2.5 text-sm font-medium text-white hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2 touch-manipulation"
+            >
+              {itemFilter === "found" ? "แจ้งเจอของ" : "แจ้งของหาย"}
+            </Link>
           </div>
         ) : (
           <div className="space-y-3">
@@ -318,7 +327,7 @@ export function HomeDashboardSection({
                 <Link
                   key={`${kind}-${item.id}`}
                   href="/tracking"
-                  className="block bg-bg-secondary rounded-xl p-4 hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border-light"
+                  className="block min-w-0 rounded-xl border border-transparent bg-bg-secondary p-4 transition-colors hover:border-border-light hover:bg-bg-tertiary touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-bg-card flex items-center justify-center text-xl shadow-sm shrink-0">
@@ -326,15 +335,15 @@ export function HomeDashboardSection({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-text-primary truncate">
+                        <h4 className="truncate text-base font-medium leading-[1.4] text-text-primary">
                           {getItemDisplayName(item)}
                         </h4>
                         <span
                           className={cn(
-                            "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            "shrink-0 px-2 py-0.5 rounded-full text-xs font-medium",
                             kind === "lost"
-                              ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                              ? "bg-status-error-light text-status-error"
+                              : "bg-line-green-light text-line-green"
                           )}
                         >
                           {kind === "lost" ? "หาย" : "เจอ"}
@@ -373,12 +382,12 @@ export function HomeDashboardSection({
           </div>
         )
       ) : displayTags.length === 0 ? (
-        <div className="text-center py-8 bg-bg-secondary rounded-2xl">
-          <Radio className="w-10 h-10 text-text-tertiary mx-auto mb-3" />
-          <p className="text-text-secondary text-sm mb-4">ยังไม่มี NFC Tag</p>
+        <div className="rounded-2xl border border-border-light bg-bg-secondary py-8 text-center">
+          <Radio className="mx-auto mb-3 h-10 w-10 text-text-tertiary" aria-hidden />
+          <p className="mb-4 text-pretty text-base text-text-secondary">ยังไม่มี NFC Tag</p>
           <Link
             href="/nfc/register"
-            className="inline-block px-5 py-2.5 rounded-full bg-line-green text-white text-sm font-medium"
+            className="inline-flex min-h-11 items-center rounded-full bg-line-green-cta px-5 py-2.5 text-sm font-medium text-white hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-offset-2 touch-manipulation"
           >
             ลงทะเบียน Tag แรก
           </Link>
@@ -399,7 +408,7 @@ export function HomeDashboardSection({
                     {cat?.icon || "📦"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-text-primary truncate">
+                    <h4 className="truncate text-base font-medium leading-[1.4] text-text-primary">
                       {tag.itemName}
                     </h4>
                     <p className="text-xs text-text-secondary mt-0.5 font-mono truncate">

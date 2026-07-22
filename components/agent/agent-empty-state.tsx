@@ -25,10 +25,10 @@ export function AgentEmptyState({ onSelectPrompt, className }: AgentEmptyStatePr
           <Search className="w-7 h-7 assistant-desktop:w-8 assistant-desktop:h-8" strokeWidth={2.25} />
         </div>
 
-        <h2 className="text-lg assistant-desktop:text-xl font-semibold text-text-primary mb-2 text-balance">
+        <h2 className="mb-2 text-balance text-xl font-semibold leading-[1.3] text-text-primary">
           {thaiCopy.agent.welcome}
         </h2>
-        <p className="text-sm text-text-secondary mb-6 assistant-desktop:mb-8 max-w-md mx-auto leading-relaxed">
+        <p className="mb-6 max-w-md mx-auto text-pretty text-base leading-[1.5] text-text-secondary assistant-desktop:mb-8">
           {thaiCopy.agent.welcomeHint}
         </p>
 
@@ -38,7 +38,7 @@ export function AgentEmptyState({ onSelectPrompt, className }: AgentEmptyStatePr
               key={prompt}
               type="button"
               onClick={() => onSelectPrompt(prompt)}
-              className="w-full text-left px-4 py-3 rounded-xl bg-bg-card border border-border-light hover:border-line-green/50 hover:bg-line-green-light/40 text-sm text-text-primary transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+              className="w-full min-h-11 text-left px-4 py-3 rounded-xl bg-bg-card border border-border-light hover:border-line-green/50 hover:bg-line-green-light/40 text-sm text-text-primary transition-colors touch-manipulation active:scale-[0.99] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
             >
               {prompt}
             </button>

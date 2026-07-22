@@ -26,7 +26,7 @@ export function AgentTopBar({ status, onNewChat, onOpenHistory, className }: Age
     <header
       className={cn(
         "sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-3 shrink-0",
-        "bg-bg-primary/95 backdrop-blur-sm border-b border-border-light",
+        "bg-bg-primary border-b border-border-light",
         className
       )}
     >
@@ -43,7 +43,7 @@ export function AgentTopBar({ status, onNewChat, onOpenHistory, className }: Age
           ) : null}
         </div>
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-text-primary truncate">
+          <h1 className="truncate text-balance text-base font-semibold leading-[1.4] text-text-primary">
             {thaiCopy.agent.title}
           </h1>
           <p className="text-xs text-text-secondary truncate">{subtitle}</p>

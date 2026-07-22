@@ -48,8 +48,9 @@ function SegmentedTabsInner<T extends string>({
             aria-selected={active}
             onClick={() => onChange(id)}
             className={cn(
-              "relative flex-1 flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors z-[1]",
-              size === "sm" ? "py-1.5 text-xs" : "py-2 text-sm",
+              "relative flex-1 flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors z-[1] min-h-11 min-w-0 touch-manipulation",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-inset",
+              size === "sm" ? "px-2 py-1.5 text-xs" : "px-3 py-2 text-sm",
               active ? "text-line-green" : "text-text-secondary hover:text-text-primary"
             )}
           >
@@ -63,9 +64,14 @@ function SegmentedTabsInner<T extends string>({
             {active && reduced && (
               <span className="absolute inset-0 bg-bg-primary rounded-lg shadow-sm" />
             )}
-            <span className="relative flex items-center gap-1.5">
-              {Icon && <Icon className={size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} />}
-              {label}
+            <span className="relative flex items-center justify-center gap-1.5 min-w-0">
+              {Icon && (
+                <Icon
+                  className={cn("shrink-0", size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4")}
+                  aria-hidden
+                />
+              )}
+              <span className="truncate">{label}</span>
             </span>
           </button>
         );

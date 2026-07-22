@@ -34,16 +34,18 @@ export function TraditionalFallbackPanel({
       <div className="flex gap-3">
         <AlertTriangle className="w-5 h-5 text-status-warning shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-text-primary text-sm">
+          <h3 className="text-base font-medium leading-[1.4] text-text-primary">
             {thaiCopy.fallback.title}
           </h3>
-          <p className="text-sm text-text-secondary mt-1 leading-relaxed">{message}</p>
+          <p className="mt-1 text-pretty text-base leading-[1.5] text-text-secondary">
+            {message}
+          </p>
           <div className="flex flex-wrap gap-2 mt-3">
             {(payload?.suggestedRoutes || []).map((route) => (
               <Link
                 key={route.href}
                 href={route.href}
-                className="px-3 py-1.5 rounded-full text-xs font-medium bg-bg-card border border-border-light hover:border-line-green/40 hover:text-line-green transition-colors"
+                className="inline-flex min-h-11 items-center rounded-full border border-border-light bg-bg-card px-4 py-2 text-sm font-medium hover:border-line-green/40 hover:text-line-green transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
               >
                 {routeLabels[route.labelKey] || route.href}
               </Link>

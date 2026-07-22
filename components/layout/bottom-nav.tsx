@@ -36,7 +36,8 @@ export default function BottomNav() {
               onClick={() => setMode("classic", { navigate: false })}
               className={cn(
                 "flex flex-1 flex-col items-center justify-center gap-1 py-2 min-h-[var(--bottom-nav-height)]",
-                "rounded-xl transition-colors duration-200",
+                "rounded-xl transition-colors duration-200 touch-manipulation",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30 focus-visible:ring-inset",
                 isActive ? "text-line-green" : "text-text-tertiary hover:text-text-secondary"
               )}
             >
@@ -45,10 +46,11 @@ export default function BottomNav() {
                   "flex items-center justify-center p-2 rounded-full transition-colors",
                   isActive && "bg-line-green-light"
                 )}
+                aria-hidden
               >
                 <Icon className={cn("w-5 h-5", isActive && "stroke-[2.5]")} />
               </span>
-              <span className={cn("text-xs font-medium leading-none", isActive && "text-line-green")}>
+              <span className="text-xs font-medium leading-[1.3] truncate max-w-full px-0.5">
                 {item.label}
               </span>
             </Link>

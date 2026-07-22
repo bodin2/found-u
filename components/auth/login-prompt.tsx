@@ -21,54 +21,53 @@ export default function LoginPrompt({
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-      {/* Icon */}
-      <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-6">
-        <Lock className="w-10 h-10 text-gray-400 dark:text-gray-500" />
+      <div
+        className="w-20 h-20 rounded-full bg-bg-tertiary flex items-center justify-center mb-6"
+        aria-hidden
+      >
+        <Lock className="w-10 h-10 text-text-tertiary" />
       </div>
 
-      {/* Title */}
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+      <h2 className="text-xl font-semibold text-text-primary mb-2 text-balance break-words max-w-md">
         {title}
       </h2>
 
-      {/* Description */}
-      <p className="text-gray-500 dark:text-gray-400 mb-2 max-w-sm">
+      <p className="text-text-secondary mb-2 max-w-sm text-pretty break-words">
         {description}
       </p>
 
-      {/* Feature hint */}
-      {feature && (
-        <div className="bg-[#e8f8ef] dark:bg-[#06C755]/20 rounded-lg px-4 py-2 mb-6">
-          <p className="text-sm text-[#06C755] font-medium">
-            ✨ {feature}
+      {feature ? (
+        <div className="bg-line-green-light rounded-xl px-4 py-2.5 mb-6 max-w-sm">
+          <p className="text-sm text-line-green-link font-medium text-pretty break-words">
+            {feature}
           </p>
         </div>
-      )}
+      ) : null}
 
-      {/* Action Buttons */}
       <div className="w-full max-w-xs space-y-3 mt-4">
         <button
+          type="button"
           onClick={() => router.push(AUTH_ROUTES.login)}
-          className="w-full py-3.5 bg-[#06C755] text-white rounded-full font-medium hover:bg-[#05b34d] transition-colors flex items-center justify-center gap-2"
+          className="w-full min-h-11 py-3.5 bg-line-green-cta text-white rounded-full font-medium hover:bg-line-green-cta-hover transition-colors flex items-center justify-center gap-2 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2"
         >
-          <LogIn className="w-5 h-5" />
+          <LogIn className="w-5 h-5" aria-hidden />
           เข้าสู่ระบบ
         </button>
 
-        {showBackButton && (
+        {showBackButton ? (
           <button
+            type="button"
             onClick={() => router.push("/home")}
-            className="w-full py-3.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+            className="w-full min-h-11 py-3.5 bg-bg-tertiary text-text-primary rounded-full font-medium hover:bg-bg-secondary transition-colors flex items-center justify-center gap-2 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
           >
             กลับหน้าหลัก
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4" aria-hidden />
           </button>
-        )}
+        ) : null}
       </div>
 
-      {/* Security note */}
-      <p className="text-xs text-gray-400 dark:text-gray-500 mt-6 max-w-xs">
-        🔒 ใช้เลขประจำตัวและรหัสผ่านจากโรงเรียน หรือ Passkey
+      <p className="text-xs text-text-secondary mt-6 max-w-xs text-pretty">
+        ใช้เลขประจำตัวและรหัสผ่านจากโรงเรียน หรือ Passkey
       </p>
     </div>
   );

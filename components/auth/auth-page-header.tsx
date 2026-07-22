@@ -13,8 +13,10 @@ export function AuthPageHeader({ subtitle }: { subtitle: string }) {
           <Package className="w-5 h-5" aria-hidden />
         </Link>
         <div className="min-w-0">
-          <h1 className="font-semibold text-text-primary truncate">foundu.forum</h1>
-          <p className="text-xs text-text-secondary truncate">{subtitle}</p>
+          <h1 className="truncate text-balance text-base font-semibold leading-[1.4] text-text-primary">
+            foundu.forum
+          </h1>
+          <p className="truncate text-xs leading-[1.3] text-text-secondary">{subtitle}</p>
         </div>
       </div>
     </header>

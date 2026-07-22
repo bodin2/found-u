@@ -154,7 +154,7 @@ export function LandingPageClient({
               className="h-9 w-9 shrink-0 object-contain"
               priority
             />
-            <span className="truncate text-lg font-semibold tracking-tight max-[399px]:sr-only">
+            <span className="truncate text-base font-semibold leading-[1.4] tracking-tight max-[399px]:sr-only">
               foundu.forum
             </span>
           </Link>
@@ -186,13 +186,6 @@ export function LandingPageClient({
             "md:overflow-visible"
           )}
         >
-          <div
-            className="pointer-events-none absolute inset-0 hidden md:block"
-            aria-hidden
-          >
-            <div className="absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-line-green/10 blur-3xl motion-reduce:hidden" />
-          </div>
-
           <LandingHeroCardSwap images={cardImages} />
 
           <div className={heroShell}>
@@ -213,7 +206,7 @@ export function LandingPageClient({
                 <h1 id="hero-heading" className={heroHeadingClass}>
                   ของหาย? แจ้งง่ายนิดเดียว
                 </h1>
-                <p className="mt-4 text-pretty text-base leading-relaxed text-text-primary md:text-lg">
+                <p className="mt-4 max-w-[65ch] text-pretty text-base leading-[1.5] text-text-primary">
                   foundu.forum รวมการแจ้งของหาย ของเจอ และติดตามสถานะไว้ที่เดียว
                   ให้คุณประกาศติดตามของที่หายและของที่พบเจอได้รวดเร็วกว่าเดิม
                 </p>
@@ -309,13 +302,13 @@ export function LandingPageClient({
                   key={step.num}
                   className="min-w-0 lg:px-8 lg:first:pl-0 lg:last:pr-0"
                 >
-                  <p className="text-sm font-medium tabular-nums text-line-green-link">
+                  <p className="text-xs font-medium leading-[1.3] tabular-nums text-line-green-link">
                     ขั้นที่ {step.num}
                   </p>
-                  <h3 className="mt-2 text-lg font-semibold text-text-primary">
+                  <h3 className="mt-2 text-balance text-base font-medium leading-[1.4] text-text-primary">
                     {step.title}
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                  <p className="mt-2 text-pretty text-base leading-[1.5] text-text-secondary">
                     {step.text}
                   </p>
                 </li>

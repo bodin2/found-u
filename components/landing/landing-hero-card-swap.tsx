@@ -38,13 +38,8 @@ const CardSwapBundle = dynamic(
                     className="object-cover object-top"
                     unoptimized={img.url.endsWith(".svg")}
                   />
-                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 items-center px-4">
-                    <div className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-white/90" />
-                      <p className="text-sm font-semibold text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.65)]">
-                        {img.label}
-                      </p>
-                    </div>
+                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/45 to-transparent px-4 py-3">
+                    <p className="text-sm font-medium text-white text-pretty">{img.label}</p>
                   </div>
                 </div>
               </Card>

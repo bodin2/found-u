@@ -209,7 +209,7 @@ export function AgentMessageBubble({
               <button
                 type="button"
                 onClick={handleCopy}
-                className="absolute -top-1 right-0 p-2 rounded-lg hover:bg-bg-tertiary text-text-tertiary transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+                className="absolute -top-1 right-0 inline-flex items-center justify-center min-w-11 min-h-11 rounded-lg hover:bg-bg-tertiary text-text-tertiary transition-opacity opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 focus-visible:opacity-100 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
                 aria-label="คัดลอก"
               >
                 {copied ? (

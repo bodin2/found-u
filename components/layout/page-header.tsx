@@ -17,9 +17,13 @@ export function PageHeader({ title, subtitle, action, className }: PageHeaderPro
       )}
     >
       <div className="min-w-0">
-        <h1 className="text-xl md:text-2xl font-bold text-text-primary">{title}</h1>
+        <h1 className="text-balance text-xl font-semibold leading-[1.3] text-text-primary">
+          {title}
+        </h1>
         {subtitle && (
-          <p className="text-sm text-text-secondary mt-1">{subtitle}</p>
+          <p className="mt-1 text-pretty text-base leading-[1.5] text-text-secondary">
+            {subtitle}
+          </p>
         )}
       </div>
       {action && <div className="shrink-0">{action}</div>}

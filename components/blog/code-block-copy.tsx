@@ -38,13 +38,13 @@ export function CodeBlockCopy({
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-white/50">
+        <span className="text-xs font-medium text-white/50 truncate min-w-0">
           {language || "plaintext"}
         </span>
         <button
           type="button"
           onClick={() => void handleCopy()}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          className="inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-lg text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white touch-manipulation shrink-0"
           aria-label="คัดลอกโค้ด"
         >
           {copied ? (
@@ -61,7 +61,7 @@ export function CodeBlockCopy({
         </button>
       </div>
       <div
-        className="overflow-x-auto p-4 text-sm leading-relaxed [&_pre]:m-0 [&_pre]:bg-transparent! [&_code]:font-mono"
+        className="overflow-x-auto p-4 text-xs leading-[1.5] [&_pre]:m-0 [&_pre]:bg-transparent! [&_code]:font-mono"
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}
       />
     </div>

@@ -25,7 +25,7 @@ export function MatchResultCard({ match, className }: MatchResultCardProps) {
     >
       <div className="flex items-center gap-3 mb-3 min-w-0">
         <div
-          className="relative w-12 h-12 rounded-full flex items-center justify-center bg-line-green-light text-line-green font-bold text-sm shrink-0"
+          className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-line-green-light text-sm font-semibold text-line-green"
           style={{
             background: `conic-gradient(var(--line-green) ${match.scorePercentage}%, var(--bg-tertiary) 0)`,
           }}
@@ -35,7 +35,9 @@ export function MatchResultCard({ match, className }: MatchResultCardProps) {
           </span>
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-text-primary">ความน่าจะเป็นคู่กัน</p>
+          <p className="text-base font-medium leading-[1.4] text-text-primary">
+            ความน่าจะเป็นคู่กัน
+          </p>
           <p className="text-xs text-text-secondary capitalize">{match.confidence}</p>
         </div>
       </div>

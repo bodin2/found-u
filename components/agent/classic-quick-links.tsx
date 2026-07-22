@@ -48,9 +48,9 @@ export function ClassicQuickLinks({ className, onAgentPrompt }: ClassicQuickLink
               }
               switchToClassic(link.href);
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium bg-bg-card border border-border-light text-text-secondary hover:text-line-green hover:border-line-green/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+            className="inline-flex items-center gap-1.5 min-h-11 px-4 py-2.5 rounded-full text-sm font-medium bg-bg-card border border-border-light text-text-secondary hover:text-line-green hover:border-line-green/30 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
           >
-            <Icon className="w-3.5 h-3.5" />
+            <Icon className="w-4 h-4 shrink-0" aria-hidden />
             {link.label}
           </button>
         );
@@ -64,7 +64,7 @@ export function ClassicQuickLinks({ className, onAgentPrompt }: ClassicQuickLink
           }
           switchToClassic("/list");
         }}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium bg-bg-card border border-border-light text-text-secondary hover:text-line-green hover:border-line-green/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+        className="inline-flex items-center gap-1.5 min-h-11 px-4 py-2.5 rounded-full text-sm font-medium bg-bg-card border border-border-light text-text-secondary hover:text-line-green hover:border-line-green/30 transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
       >
         ดูรายการของ
       </button>

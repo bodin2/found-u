@@ -48,7 +48,7 @@ function AgentChatInner() {
         role="status"
         aria-label="กำลังโหลด"
       >
-        <div className="w-8 h-8 rounded-full border-2 border-line-green border-t-transparent animate-spin" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-line-green border-t-transparent motion-reduce:animate-none" />
       </div>
     );
   }
@@ -58,12 +58,12 @@ function AgentChatInner() {
       <div className="h-full flex-1 flex flex-col agent-surface-bg min-h-0">
         <AgentTopBar />
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <p className="text-sm text-text-secondary mb-5 max-w-sm leading-relaxed">
+          <p className="mb-5 max-w-sm text-pretty text-base leading-[1.5] text-text-secondary">
             {thaiCopy.agent.loginRequired}
           </p>
           <Link
             href={AUTH_ROUTES.hub}
-            className="px-8 py-3 rounded-full bg-line-green text-white font-medium hover:bg-line-green-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2"
+            className="min-h-11 rounded-full bg-line-green-cta px-8 py-3 font-medium text-white transition-colors hover:bg-line-green-cta-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2 touch-manipulation"
           >
             เข้าสู่ระบบ
           </Link>
@@ -80,7 +80,7 @@ function AgentChatInner() {
         role="status"
         aria-label="กำลังโหลดแชท"
       >
-        <div className="w-8 h-8 rounded-full border-2 border-line-green border-t-transparent animate-spin" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-line-green border-t-transparent motion-reduce:animate-none" />
       </div>
     );
   }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { m, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { MotionProvider } from "@/components/motion/motion-provider";
@@ -23,7 +24,11 @@ export type ResponsiveModalProps = {
   size?: "sm" | "md" | "lg";
   showCloseButton?: boolean;
   closeOnBackdrop?: boolean;
+  /** Close on Escape. Default true. */
+  closeOnEscape?: boolean;
   ariaLabelledBy?: string;
+  /** Fallback name when no title / ariaLabelledBy is provided */
+  ariaLabel?: string;
 };
 
 const sizeClasses = {
@@ -31,6 +36,13 @@ const sizeClasses = {
   md: "max-w-md",
   lg: "max-w-lg",
 };
+
+const iconButtonClass = cn(
+  "inline-flex items-center justify-center min-w-11 min-h-11 rounded-lg shrink-0",
+  "text-text-tertiary hover:bg-bg-secondary hover:text-text-secondary",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30",
+  "touch-manipulation"
+);
 
 function ResponsiveModalInner({
   open,
@@ -43,29 +55,38 @@ function ResponsiveModalInner({
   size = "md",
   showCloseButton = true,
   closeOnBackdrop = true,
+  closeOnEscape = true,
   ariaLabelledBy,
+  ariaLabel,
 }: ResponsiveModalProps) {
   const isDesktop = useIsDesktop();
   const reduced = useReducedMotion();
   const panelRef = useRef<HTMLDivElement>(null);
+  const autoTitleId = useId();
+  const autoDescriptionId = useId();
   useLockBodyScroll(open);
+  useFocusTrap(panelRef, {
+    active: open,
+    restoreFocus: true,
+  });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !closeOnEscape) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, closeOnEscape]);
 
-  useEffect(() => {
-    if (open && panelRef.current) {
-      panelRef.current.focus();
-    }
-  }, [open]);
-
-  const titleId = ariaLabelledBy ?? (title ? "responsive-modal-title" : undefined);
+  const titleId = ariaLabelledBy ?? (title ? autoTitleId : undefined);
+  const descriptionId = description ? autoDescriptionId : undefined;
+  const labelledByProps = titleId
+    ? { "aria-labelledby": titleId }
+    : { "aria-label": ariaLabel ?? "กล่องโต้ตอบ" };
 
   const motionDuration = reduced ? 0 : duration.fast;
   const motionDurationNormal = reduced ? 0 : duration.normal;
@@ -111,7 +132,7 @@ function ResponsiveModalInner({
     <AnimatePresence>
       {open && (
         <m.div
-          className="overlay-modal fixed inset-0 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm p-0 md:p-4"
+          className="overlay-modal fixed inset-0 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4"
           role="presentation"
           initial="initial"
           animate="animate"
@@ -124,9 +145,10 @@ function ResponsiveModalInner({
             tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-labelledby={titleId}
+            {...labelledByProps}
+            aria-describedby={descriptionId}
             className={cn(
-              "relative flex flex-col bg-bg-card border border-border-light shadow-2xl outline-none w-full",
+              "relative flex flex-col bg-bg-card border border-border-light shadow-sm outline-none w-full",
               isDesktop
                 ? cn("rounded-2xl max-h-[85vh]", sizeClasses[size])
                 : "rounded-t-2xl max-h-[min(85dvh,100%)] safe-bottom border-b-0",
@@ -147,30 +169,35 @@ function ResponsiveModalInner({
                   {title && (
                     <h2
                       id={titleId}
-                      className="text-lg font-semibold text-text-primary"
+                      className="text-balance break-words text-xl font-semibold leading-[1.3] text-text-primary"
                     >
                       {title}
                     </h2>
                   )}
                   {description && (
-                    <p className="text-sm text-text-secondary mt-1">{description}</p>
+                    <p
+                      id={descriptionId}
+                      className="text-sm text-text-secondary mt-1 text-pretty break-words"
+                    >
+                      {description}
+                    </p>
                   )}
                 </div>
                 {showCloseButton && (
                   <button
                     type="button"
                     onClick={onClose}
-                    className="p-1.5 rounded-lg text-text-tertiary hover:bg-bg-secondary shrink-0"
+                    className={iconButtonClass}
                     aria-label="ปิด"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-5 h-5" aria-hidden />
                   </button>
                 )}
               </div>
             )}
 
             {children && (
-              <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 min-h-0">
+              <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 min-h-0 min-w-0">
                 {children}
               </div>
             )}

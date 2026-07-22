@@ -38,10 +38,10 @@ export function FeaturesMotionCarousel({ features }: FeaturesMotionCarouselProps
           >
             <Icon className="h-5 w-5" aria-hidden />
           </div>
-          <h3 className="text-lg font-semibold text-text-primary">
+          <h3 className="text-balance text-base font-medium leading-[1.4] text-text-primary">
             {feature.title}
           </h3>
-          <p className="mt-2 flex-1 text-sm leading-relaxed text-text-secondary md:text-base">
+          <p className="mt-2 flex-1 text-pretty text-base leading-[1.5] text-text-secondary">
             {feature.text}
           </p>
         </article>

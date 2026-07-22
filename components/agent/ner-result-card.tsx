@@ -27,12 +27,16 @@ export function NerResultCard({ data, className }: NerResultCardProps) {
         className
       )}
     >
-      <p className="text-xs font-medium text-line-green mb-2">ข้อมูลที่สกัดได้</p>
-      <p className="font-semibold text-text-primary text-sm break-words">{data.item || "ไม่ระบุชื่อ"}</p>
+      <p className="mb-2 text-xs font-medium leading-[1.3] text-line-green">ข้อมูลที่สกัดได้</p>
+      <p className="break-words text-base font-medium leading-[1.4] text-text-primary">
+        {data.item || "ไม่ระบุชื่อ"}
+      </p>
       {data.description ? (
-        <p className="text-xs text-text-secondary mt-1 break-words">{data.description}</p>
+        <p className="mt-1 break-words text-pretty text-base leading-[1.5] text-text-secondary">
+          {data.description}
+        </p>
       ) : null}
-      <div className="text-xs text-text-tertiary mt-2 space-y-0.5 break-words">
+      <div className="mt-2 space-y-0.5 break-words text-xs leading-[1.3] text-text-secondary">
         {data.location ? <p>📍 {data.location}</p> : null}
         {data.time ? <p>🕐 {data.time}</p> : null}
         {data.category ? <p>หมวด: {data.category}</p> : null}

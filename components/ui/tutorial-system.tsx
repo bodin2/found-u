@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, X, Search, Camera, Clock, Sparkles } from "lucide-react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, ChevronRight, X, Search, Camera, Clock, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateUserTutorialSeen } from "@/lib/database";
+import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useMounted } from "@/hooks/use-mounted";
 
 interface TutorialStep {
   id: number;
   title: string;
   description: string;
   icon: React.ReactNode;
-  image?: string;
   bgColor: string;
 }
 
@@ -18,30 +21,34 @@ const tutorialSteps: TutorialStep[] = [
   {
     id: 1,
     title: "ยินดีต้อนรับสู่ Found-U",
-    description: "ระบบแจ้งของหายและของเจอสำหรับโรงเรียน\nช่วยให้คุณตามหาของที่หายได้ง่ายขึ้น",
-    icon: <Sparkles className="w-12 h-12 text-white" />,
-    bgColor: "from-[#06C755] to-[#04a044]",
+    description:
+      "ระบบแจ้งของหายและของเจอสำหรับโรงเรียน\nช่วยให้คุณตามหาของที่หายได้ง่ายขึ้น",
+    icon: <Package className="w-10 h-10 text-line-green-link" aria-hidden />,
+    bgColor: "bg-line-green-light",
   },
   {
     id: 2,
     title: "แจ้งของหาย",
-    description: "ของหาย? กรอกรายละเอียดสิ่งของที่หาย\nระบบจะสร้างรหัสติดตามให้อัตโนมัติ",
-    icon: <Search className="w-12 h-12 text-white" />,
-    bgColor: "from-red-500 to-red-600",
+    description:
+      "ของหาย? กรอกรายละเอียดสิ่งของที่หาย\nระบบจะสร้างรหัสติดตามให้อัตโนมัติ",
+    icon: <Search className="w-10 h-10 text-status-error" aria-hidden />,
+    bgColor: "bg-status-error-light",
   },
   {
     id: 3,
     title: "แจ้งเจอของ",
-    description: "เจอของตกหล่น? ถ่ายรูปและแจ้งสถานที่\nช่วยให้เจ้าของติดต่อกลับได้เร็วขึ้น",
-    icon: <Camera className="w-12 h-12 text-white" />,
-    bgColor: "from-[#06C755] to-[#04a044]",
+    description:
+      "เจอของตกหล่น? ถ่ายรูปและแจ้งสถานที่\nช่วยให้เจ้าของติดต่อกลับได้เร็วขึ้น",
+    icon: <Camera className="w-10 h-10 text-line-green-link" aria-hidden />,
+    bgColor: "bg-line-green-light",
   },
   {
     id: 4,
     title: "ติดตามสถานะ",
-    description: "ใช้รหัสติดตามเพื่อเช็คสถานะของหาย\nหรือดูรายการทั้งหมดในหน้าติดตาม",
-    icon: <Clock className="w-12 h-12 text-white" />,
-    bgColor: "from-blue-500 to-blue-600",
+    description:
+      "ใช้รหัสติดตามเพื่อเช็คสถานะของหาย\nหรือดูรายการทั้งหมดในหน้าติดตาม",
+    icon: <Clock className="w-10 h-10 text-status-info" aria-hidden />,
+    bgColor: "bg-status-info-light",
   },
 ];
 
@@ -52,11 +59,18 @@ interface TutorialSystemProps {
 }
 
 export function TutorialSystem({ isOpen, userId, onComplete }: TutorialSystemProps) {
+  const mounted = useMounted();
   const [currentStep, setCurrentStep] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
-  // Minimum swipe distance
+  useLockBodyScroll(isOpen);
+  useFocusTrap(panelRef, { active: isOpen, restoreFocus: true });
+
   const minSwipeDistance = 50;
 
   const handleNext = useCallback(() => {
@@ -71,25 +85,27 @@ export function TutorialSystem({ isOpen, userId, onComplete }: TutorialSystemPro
     }
   }, [currentStep]);
 
-  const handleComplete = async () => {
+  const persistAndFinish = useCallback(async () => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await updateUserTutorialSeen(userId);
     } catch (error) {
       console.error("Error updating tutorial status:", error);
+    } finally {
+      setIsSaving(false);
+      onComplete();
     }
-    onComplete();
+  }, [isSaving, onComplete, userId]);
+
+  const handleComplete = () => {
+    void persistAndFinish();
   };
 
-  const handleSkip = useCallback(async () => {
-    try {
-      await updateUserTutorialSeen(userId);
-    } catch (error) {
-      console.error("Error updating tutorial status:", error);
-    }
-    onComplete();
-  }, [onComplete, userId]);
+  const handleSkip = useCallback(() => {
+    void persistAndFinish();
+  }, [persistAndFinish]);
 
-  // Touch handlers for swipe
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
     setTouchStart(e.targetTouches[0].clientX);
@@ -100,137 +116,174 @@ export function TutorialSystem({ isOpen, userId, onComplete }: TutorialSystemPro
   };
 
   const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
+    if (touchStart === null || touchEnd === null) return;
     const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-
-    if (isLeftSwipe) {
-      handleNext();
-    } else if (isRightSwipe) {
-      handlePrev();
-    }
+    if (distance > minSwipeDistance) handleNext();
+    if (distance < -minSwipeDistance) handlePrev();
   };
 
-  // Keyboard navigation
   useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOpen) return;
       if (e.key === "ArrowRight") handleNext();
       if (e.key === "ArrowLeft") handlePrev();
       if (e.key === "Escape") handleSkip();
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, handleNext, handlePrev, handleSkip]);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) setCurrentStep(0);
+  }, [isOpen]);
+
+  if (!mounted || !isOpen) return null;
 
   const step = tutorialSteps[currentStep];
   const isLastStep = currentStep === tutorialSteps.length - 1;
+  const stepLabel = `ขั้นตอน ${currentStep + 1} จาก ${tutorialSteps.length}`;
 
-  return (
-    <div className="overlay-modal fixed inset-0 flex items-center justify-center bg-black/80">
-      {/* Tutorial Card */}
+  return createPortal(
+    <div
+      className="overlay-modal fixed inset-0 flex items-center justify-center bg-black/40 p-4"
+      role="presentation"
+    >
       <div
-        className="relative w-full max-w-md mx-4 overflow-hidden animate-fade-in"
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="relative w-full max-w-md outline-none"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {/* Skip button */}
+        <p className="sr-only" aria-live="polite">
+          {stepLabel}: {step.title}
+        </p>
+
         <button
+          type="button"
           onClick={handleSkip}
-          className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+          disabled={isSaving}
+          className={cn(
+            "absolute top-2 right-2 z-10 inline-flex items-center justify-center",
+            "min-w-11 min-h-11 rounded-full bg-black/25 text-white",
+            "hover:bg-black/40 transition-colors touch-manipulation",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+            "disabled:opacity-50"
+          )}
+          aria-label="ข้ามคำแนะนำ"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden />
         </button>
 
-        {/* Main Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden">
-          {/* Top Section with Icon */}
+        <div className="bg-bg-card rounded-2xl border border-border-light overflow-hidden">
           <div
             className={cn(
-              "relative h-64 flex items-center justify-center bg-gradient-to-br transition-all duration-500",
+              "relative h-56 flex items-center justify-center transition-colors duration-300 motion-reduce:transition-none",
               step.bgColor
             )}
           >
-            {/* Decorative circles */}
-            <div className="absolute top-0 left-0 w-32 h-32 rounded-full bg-white/10 -translate-x-1/2 -translate-y-1/2" />
-            <div className="absolute bottom-0 right-0 w-40 h-40 rounded-full bg-white/10 translate-x-1/4 translate-y-1/4" />
-
-            {/* Icon container */}
-            <div className="relative z-10 w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+            <div className="relative z-10 w-16 h-16 rounded-full bg-bg-card flex items-center justify-center border border-border-light">
               {step.icon}
             </div>
           </div>
 
-          {/* Content Section */}
-          <div className="px-8 py-8">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center mb-3">
+          <div className="px-6 py-7 sm:px-8">
+            <h2
+              id={titleId}
+              className="text-xl font-semibold text-text-primary text-center mb-3 text-balance break-words"
+            >
               {step.title}
             </h2>
-            <p className="text-gray-500 dark:text-gray-400 text-center whitespace-pre-line leading-relaxed">
+            <p
+              id={descriptionId}
+              className="text-center text-pretty break-words text-base leading-[1.5] text-text-secondary whitespace-pre-line"
+            >
               {step.description}
             </p>
 
-            {/* Progress Dots */}
-            <div className="flex items-center justify-center gap-2 mt-8">
-              {tutorialSteps.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentStep(index)}
-                  className={cn(
-                    "w-2.5 h-2.5 rounded-full transition-all duration-300",
-                    index === currentStep
-                      ? "w-8 bg-[#06C755]"
-                      : "bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500"
-                  )}
-                />
-              ))}
+            <div
+              className="flex items-center justify-center gap-1 mt-8"
+              role="tablist"
+              aria-label="ขั้นตอนคำแนะนำ"
+            >
+              {tutorialSteps.map((s, index) => {
+                const active = index === currentStep;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={`ไปขั้นตอน ${index + 1}: ${s.title}`}
+                    onClick={() => setCurrentStep(index)}
+                    className={cn(
+                      "inline-flex items-center justify-center min-w-11 min-h-11 rounded-full touch-manipulation",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "rounded-full transition-all duration-200 motion-reduce:transition-none",
+                        active
+                          ? "w-8 h-2.5 bg-line-green"
+                          : "w-2.5 h-2.5 bg-bg-tertiary hover:bg-border-medium"
+                      )}
+                      aria-hidden
+                    />
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Navigation Buttons */}
             <div className="flex items-center gap-3 mt-8">
               {currentStep > 0 && (
                 <button
+                  type="button"
                   onClick={handlePrev}
-                  className="flex-1 py-4 rounded-full border-2 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                  disabled={isSaving}
+                  className={cn(
+                    "flex-1 min-h-11 py-3 px-4 rounded-full font-medium",
+                    "bg-bg-tertiary text-text-primary hover:bg-bg-secondary",
+                    "transition-colors flex items-center justify-center gap-2 touch-manipulation",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30",
+                    "disabled:opacity-50"
+                  )}
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-5 h-5" aria-hidden />
                   ก่อนหน้า
                 </button>
               )}
               <button
+                type="button"
                 onClick={isLastStep ? handleComplete : handleNext}
+                disabled={isSaving}
+                aria-busy={isSaving}
                 className={cn(
-                  "flex-1 py-4 rounded-full font-semibold text-white transition-all duration-200 flex items-center justify-center gap-2",
-                  "bg-[#06C755] hover:bg-[#05a647] active:scale-[0.98]",
+                  "flex-1 min-h-11 py-3 px-4 rounded-full font-medium text-white",
+                  "bg-line-green-cta hover:bg-line-green-cta-hover",
+                  "transition-colors flex items-center justify-center gap-2 touch-manipulation",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2",
+                  "disabled:opacity-50",
                   currentStep === 0 && "w-full"
                 )}
               >
-                {isLastStep ? (
-                  <>
-                    เริ่มใช้งาน
-                    <Sparkles className="w-5 h-5" />
-                  </>
-                ) : (
-                  <>
-                    ถัดไป
-                    <ChevronRight className="w-5 h-5" />
-                  </>
-                )}
+                {isLastStep ? (isSaving ? "กำลังบันทึก..." : "เริ่มใช้งาน") : "ถัดไป"}
+                {!isLastStep ? <ChevronRight className="w-5 h-5" aria-hidden /> : null}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Swipe hint */}
-        <p className="text-center text-white/60 text-xs mt-4">
+        <p className="text-center text-white/70 text-xs mt-4" aria-hidden>
           ปัดซ้าย-ขวาเพื่อเปลี่ยนหน้า
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

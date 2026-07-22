@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { AppDialog } from "@/components/ui/app-dialog";
+import { cn } from "@/lib/utils";
 
 type ChatSessionMenuProps = {
   sessionId: string;
@@ -9,6 +11,18 @@ type ChatSessionMenuProps = {
   onRename: (sessionId: string, title: string) => Promise<void>;
   onDelete: (sessionId: string) => Promise<void>;
 };
+
+const iconBtnClass = cn(
+  "inline-flex items-center justify-center min-w-11 min-h-11 rounded-lg",
+  "hover:bg-bg-secondary text-text-tertiary touch-manipulation",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+);
+
+const menuItemClass = cn(
+  "w-full min-h-11 flex items-center gap-2 px-3 py-2.5 text-sm text-text-primary",
+  "hover:bg-bg-tertiary touch-manipulation",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-green/30"
+);
 
 export function ChatSessionMenu({
   sessionId,
@@ -19,6 +33,8 @@ export function ChatSessionMenu({
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(title);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleRename = async () => {
     const next = draft.trim();
@@ -29,37 +45,43 @@ export function ChatSessionMenu({
     setOpen(false);
   };
 
-  const handleDelete = async () => {
-    if (!confirm("ลบแชทนี้ถาวร?")) return;
-    await onDelete(sessionId);
-    setOpen(false);
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await onDelete(sessionId);
+      setConfirmDelete(false);
+      setOpen(false);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (renaming) {
     return (
-      <div className="absolute right-2 top-2 z-10 bg-bg-primary border border-border-light rounded-xl p-2 shadow-lg w-48">
+      <div className="absolute right-2 top-2 z-10 w-[min(100vw-2rem,13rem)] rounded-xl border border-border-light bg-bg-primary p-3 shadow-sm">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          className="w-full text-xs px-2 py-1.5 rounded-lg border border-border-light mb-2"
+          className="mb-2 w-full min-h-11 rounded-lg border border-border-light px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
           autoFocus
+          aria-label="ชื่อแชทใหม่"
           onKeyDown={(e) => {
             if (e.key === "Enter") void handleRename();
             if (e.key === "Escape") setRenaming(false);
           }}
         />
-        <div className="flex gap-1">
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={() => void handleRename()}
-            className="flex-1 text-xs py-1 rounded-lg bg-line-green text-white"
+            className="min-h-11 flex-1 rounded-full bg-line-green-cta text-sm font-medium text-white touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
           >
             บันทึก
           </button>
           <button
             type="button"
             onClick={() => setRenaming(false)}
-            className="flex-1 text-xs py-1 rounded-lg bg-bg-tertiary"
+            className="min-h-11 flex-1 rounded-full bg-bg-tertiary text-sm font-medium text-text-primary touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
           >
             ยกเลิก
           </button>
@@ -73,37 +95,63 @@ export function ChatSessionMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="p-1.5 rounded-lg hover:bg-bg-secondary text-text-tertiary"
+        className={iconBtnClass}
         aria-label="เมนูแชท"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
-        <MoreVertical className="w-3.5 h-3.5" />
+        <MoreVertical className="h-4 w-4" aria-hidden />
       </button>
       {open ? (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute right-0 top-full mt-1 z-20 bg-bg-primary border border-border-light rounded-xl shadow-lg py-1 min-w-[140px]">
+          <div
+            role="menu"
+            className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] rounded-xl border border-border-light bg-bg-primary py-1 shadow-sm"
+          >
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 setDraft(title);
                 setRenaming(true);
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-primary hover:bg-bg-tertiary"
+              className={menuItemClass}
             >
-              <Pencil className="w-3.5 h-3.5" />
+              <Pencil className="h-4 w-4 shrink-0" aria-hidden />
               เปลี่ยนชื่อ
             </button>
             <button
               type="button"
-              onClick={() => void handleDelete()}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-error hover:bg-status-error-light/50"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setConfirmDelete(true);
+              }}
+              className={cn(menuItemClass, "text-status-error hover:bg-status-error-light/50")}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
               ลบแชท
             </button>
           </div>
         </>
       ) : null}
+
+      <AppDialog
+        open={confirmDelete}
+        title="ลบแชทนี้?"
+        message="การลบจะลบประวัติแชทนี้อย่างถาวร และกู้คืนไม่ได้"
+        variant="error"
+        confirmLabel={deleting ? "กำลังลบ…" : "ลบแชท"}
+        cancelLabel="ยกเลิก"
+        showCancel
+        onConfirm={() => {
+          if (!deleting) void handleConfirmDelete();
+        }}
+        onCancel={() => {
+          if (!deleting) setConfirmDelete(false);
+        }}
+      />
     </div>
   );
 }

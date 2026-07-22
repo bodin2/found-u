@@ -50,8 +50,8 @@ function ToolbarButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40",
-        active && "bg-[#e8f8ef] text-[#06C755]"
+        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-tertiary disabled:opacity-40",
+        active && "bg-line-green-light text-line-green-link"
       )}
     >
       {children}
@@ -116,7 +116,7 @@ function EditorToolbar({
   };
 
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-2 py-1.5">
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b border-border-light bg-bg-card px-2 py-1.5">
       <ToolbarButton
         title="Bold"
         active={editor.isActive("bold")}
@@ -188,7 +188,7 @@ function EditorToolbar({
       </ToolbarButton>
       {editor.isActive("codeBlock") ? (
         <select
-          className="ml-1 rounded-md border border-gray-200 dark:border-gray-600 bg-transparent text-xs px-2 py-1"
+          className="ml-1 rounded-lg border border-border-light bg-bg-card text-xs text-text-primary px-2 py-1"
           value={String(editor.getAttributes("codeBlock").language || "plaintext")}
           onChange={(e) =>
             editor
@@ -216,7 +216,7 @@ function EditorToolbar({
       >
         <StepIcon className="w-4 h-4" />
       </ToolbarButton>
-      <div className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-600" />
+      <div className="mx-1 h-5 w-px bg-border-light" />
       <ToolbarButton
         title="Undo"
         onClick={() => editor.chain().focus().undo().run()}
@@ -248,7 +248,7 @@ export function ArticleEditor({
     editorProps: {
       attributes: {
         class:
-          "prose-blog min-h-[320px] px-4 py-4 focus:outline-none text-gray-900 dark:text-gray-100",
+          "prose-blog min-h-[320px] px-4 py-4 focus:outline-none text-text-primary",
       },
     },
     onUpdate: ({ editor: ed }) => {
@@ -269,7 +269,7 @@ export function ArticleEditor({
 
   if (!editor) {
     return (
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-700 p-8 text-center text-sm text-gray-500">
+      <div className="rounded-2xl border border-border-light bg-bg-secondary p-8 text-center text-sm text-text-secondary">
         กำลังโหลดตัวแก้ไข…
       </div>
     );
@@ -278,43 +278,55 @@ export function ArticleEditor({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden",
+        "rounded-2xl border border-border-light bg-bg-card overflow-hidden",
         className
       )}
     >
       <EditorToolbar editor={editor} onUploadImage={onUploadImage} />
       <EditorContent editor={editor} />
       <style jsx global>{`
+        .prose-blog {
+          max-width: 65ch;
+        }
         .prose-blog p {
           margin: 0.75rem 0;
-          line-height: 1.7;
+          line-height: 1.5;
+          font-size: 1rem;
+          font-weight: 400;
         }
         .prose-blog h2 {
-          font-size: 1.35rem;
+          font-size: 1.25rem;
           font-weight: 600;
+          line-height: 1.3;
           margin: 1.25rem 0 0.5rem;
+          text-wrap: balance;
         }
         .prose-blog h3 {
-          font-size: 1.15rem;
-          font-weight: 600;
+          font-size: 1rem;
+          font-weight: 500;
+          line-height: 1.4;
           margin: 1rem 0 0.4rem;
+          text-wrap: balance;
         }
         .prose-blog ul {
           list-style: disc;
           padding-left: 1.25rem;
           margin: 0.75rem 0;
+          line-height: 1.5;
         }
         .prose-blog ol {
           list-style: decimal;
           padding-left: 1.25rem;
           margin: 0.75rem 0;
+          line-height: 1.5;
         }
         .prose-blog blockquote {
-          border-left: 3px solid #06c755;
-          padding-left: 1rem;
+          background: var(--bg-secondary, #f7f8fa);
+          border-radius: 0.75rem;
+          padding: 0.75rem 1rem;
           margin: 0.75rem 0;
-          opacity: 0.85;
-          font-style: italic;
+          color: var(--text-secondary, #6b7280);
+          line-height: 1.5;
         }
         .prose-blog pre {
           background: #0d1117;
@@ -323,7 +335,8 @@ export function ArticleEditor({
           padding: 1rem;
           overflow-x: auto;
           font-family: ui-monospace, monospace;
-          font-size: 0.875rem;
+          font-size: 0.75rem;
+          line-height: 1.5;
           margin: 0.75rem 0;
         }
         .prose-blog img {
@@ -336,63 +349,65 @@ export function ArticleEditor({
           display: flex;
           align-items: center;
           gap: 0.75rem;
-          border: 1px solid #e5e7eb;
+          border: 1px solid var(--border-light, #e5e7eb);
           border-radius: 1rem;
           padding: 0.75rem 1rem;
           margin: 0.75rem 0;
-          background: #f9fafb;
+          background: var(--bg-secondary, #f7f8fa);
         }
         .dark .prose-blog .blog-step-heading {
-          border-color: #374151;
-          background: #111827;
+          border-color: var(--border-light, #374151);
+          background: var(--bg-tertiary, #1a1a1a);
         }
         .prose-blog .blog-step-heading__label {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background: #e8f8ef;
-          color: #06c755;
-          font-size: 0.7rem;
-          font-weight: 600;
-          text-transform: uppercase;
+          background: var(--line-green-light, #e8f8ef);
+          color: var(--line-green-link);
+          font-size: 0.75rem;
+          font-weight: 500;
+          line-height: 1.3;
           border-radius: 999px;
           padding: 0.25rem 0.6rem;
         }
         .prose-blog .blog-step-heading__title {
-          font-weight: 600;
+          font-size: 1rem;
+          font-weight: 500;
+          line-height: 1.4;
         }
         .prose-blog .blog-video-embed {
           display: flex;
           flex-direction: column;
           gap: 0.35rem;
-          border: 1px dashed #06c755;
+          border: 1px solid var(--border-light, #e5e7eb);
           border-radius: 1rem;
           padding: 0.85rem 1rem;
           margin: 0.75rem 0;
-          background: #e8f8ef;
+          background: var(--bg-secondary, #f7f8fa);
         }
         .dark .prose-blog .blog-video-embed {
-          background: rgba(6, 199, 85, 0.08);
-          border-color: rgba(6, 199, 85, 0.45);
+          background: var(--bg-tertiary, #1a1a1a);
+          border-color: var(--border-light, #374151);
         }
         .prose-blog .blog-video-embed__badge {
           display: inline-flex;
           width: fit-content;
-          font-size: 0.7rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          color: #06c755;
+          font-size: 0.75rem;
+          font-weight: 500;
+          line-height: 1.3;
+          color: var(--text-secondary, #6b7280);
         }
         .prose-blog .blog-video-embed__title {
-          font-size: 0.875rem;
+          font-size: 1rem;
           font-weight: 500;
-          opacity: 0.85;
+          line-height: 1.4;
+          color: var(--text-primary, #191919);
         }
         .prose-blog p.is-editor-empty:first-child::before {
           content: attr(data-placeholder);
           float: left;
-          color: #9ca3af;
+          color: var(--text-tertiary, #9ca3af);
           pointer-events: none;
           height: 0;
         }

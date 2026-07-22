@@ -70,7 +70,7 @@ export function PlaceSearchInput({
         }
 
         if (!response.ok) {
-          setError("ค้นหาไม่สำเร็จ ลองใหม่อีกครั้ง");
+          setError("ค้นหาไม่สำเร็จ ลองอีกครั้ง");
           setResults([]);
           setOpen(true);
           return;
@@ -83,7 +83,7 @@ export function PlaceSearchInput({
         setOpen(true);
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
-        setError("ค้นหาไม่สำเร็จ ลองใหม่อีกครั้ง");
+        setError("ค้นหาไม่สำเร็จ ลองอีกครั้ง");
         setResults([]);
         setOpen(true);
       } finally {
@@ -121,11 +121,11 @@ export function PlaceSearchInput({
 
   return (
     <div ref={containerRef} className={cn("relative min-w-0", className)}>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      <label className="block text-sm font-medium text-text-primary mb-1">
         ค้นหาสถานที่
       </label>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary pointer-events-none" aria-hidden />
         <input
           type="search"
           value={query}
@@ -139,10 +139,15 @@ export function PlaceSearchInput({
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          className="w-full pl-9 pr-10 py-2 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-line-green"
+          className="w-full min-h-11 pl-9 pr-12 py-2.5 bg-bg-card border border-border-light rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-line-green"
         />
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+          {loading && (
+            <Loader2
+              className="mr-2 h-4 w-4 animate-spin text-text-tertiary motion-reduce:animate-none"
+              aria-hidden
+            />
+          )}
           {query && !loading && (
             <button
               type="button"
@@ -150,10 +155,10 @@ export function PlaceSearchInput({
                 setQuery("");
                 clearResults();
               }}
-              className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              className="inline-flex items-center justify-center min-w-11 min-h-11 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary touch-manipulation"
               aria-label="ล้างการค้นหา"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" aria-hidden />
             </button>
           )}
         </div>
@@ -163,10 +168,10 @@ export function PlaceSearchInput({
         <div
           id={listId}
           role="listbox"
-          className="absolute z-30 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg"
+          className="absolute z-30 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-border-light bg-bg-card shadow-sm"
         >
           {error && results.length === 0 ? (
-            <p className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-300">{error}</p>
+            <p className="px-3 py-3 text-sm text-text-secondary break-words">{error}</p>
           ) : (
             <ul className="py-1">
               {results.map((place) => (
@@ -174,10 +179,10 @@ export function PlaceSearchInput({
                   <button
                     type="button"
                     onClick={() => handleSelect(place)}
-                    className="w-full flex items-start gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    className="w-full min-h-11 flex items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-bg-secondary transition-colors touch-manipulation"
                   >
-                    <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-[#06C755]" />
-                    <span className="min-w-0 text-gray-800 dark:text-gray-100 leading-snug">
+                    <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-line-green" aria-hidden />
+                    <span className="min-w-0 text-text-primary leading-snug break-words">
                       {place.label}
                     </span>
                   </button>

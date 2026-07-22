@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, RotateCcw, VideoOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusAlert } from "@/components/ui/status-alert";
 
 interface CameraCaptureLabels {
   start: string;
@@ -10,6 +11,7 @@ interface CameraCaptureLabels {
   retake: string;
   unavailable: string;
   idle: string;
+  permissionDenied?: string;
 }
 
 interface CameraCaptureProps {
@@ -21,12 +23,28 @@ interface CameraCaptureProps {
 }
 
 const DEFAULT_LABELS: CameraCaptureLabels = {
-  start: "Start camera",
-  capture: "Capture photo",
-  retake: "Retake",
-  unavailable: "Camera is not available",
-  idle: "Camera is off",
+  start: "เปิดกล้อง",
+  capture: "ถ่ายรูป",
+  retake: "ถ่ายใหม่",
+  unavailable: "กล้องไม่พร้อมใช้งานบนอุปกรณ์นี้",
+  idle: "กล้องยังไม่เปิด",
+  permissionDenied: "ไม่ได้รับอนุญาตใช้กล้อง — เปิดสิทธิ์ในเบราว์เซอร์แล้วลองอีกครั้ง",
 };
+
+const primaryButtonClass = cn(
+  "flex-1 min-h-11 py-3 px-4 rounded-full font-medium text-white",
+  "bg-line-green-cta hover:bg-line-green-cta-hover",
+  "flex items-center justify-center gap-2 touch-manipulation",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2",
+  "disabled:opacity-60 disabled:cursor-not-allowed"
+);
+
+const secondaryButtonClass = cn(
+  "min-h-11 py-3 px-4 rounded-full font-medium",
+  "bg-bg-tertiary text-text-primary hover:bg-bg-secondary",
+  "flex items-center justify-center gap-2 touch-manipulation",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/30"
+);
 
 async function requestCameraStream(): Promise<MediaStream> {
   const withEnvironment = {
@@ -39,6 +57,20 @@ async function requestCameraStream(): Promise<MediaStream> {
   } catch {
     return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   }
+}
+
+function cameraErrorMessage(err: unknown, labels: CameraCaptureLabels): string {
+  const name =
+    err && typeof err === "object" && "name" in err
+      ? String((err as { name?: string }).name)
+      : "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return labels.permissionDenied ?? labels.unavailable;
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return labels.unavailable;
+  }
+  return labels.unavailable;
 }
 
 export default function CameraCapture({
@@ -77,7 +109,6 @@ export default function CameraCapture({
     }
   }, [previewUrl, stopCamera]);
 
-  // Attach stream after <video> is mounted (stream toggles conditional UI)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !stream) return;
@@ -110,7 +141,7 @@ export default function CameraCapture({
       setStream(media);
     } catch (err) {
       console.error("Failed to start camera", err);
-      setError(mergedLabels.unavailable);
+      setError(cameraErrorMessage(err, mergedLabels));
     } finally {
       setIsStarting(false);
     }
@@ -124,17 +155,28 @@ export default function CameraCapture({
     const width = video.videoWidth || 1280;
     const height = video.videoHeight || 720;
 
+    if (!width || !height) {
+      setError(mergedLabels.unavailable);
+      return;
+    }
+
     canvas.width = width;
     canvas.height = height;
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      setError(mergedLabels.unavailable);
+      return;
+    }
 
     ctx.drawImage(video, 0, 0, width, height);
 
     canvas.toBlob(
       (blob) => {
-        if (!blob) return;
+        if (!blob) {
+          setError(mergedLabels.unavailable);
+          return;
+        }
         const file = new File([blob], `capture-${Date.now()}.jpg`, {
           type: "image/jpeg",
         });
@@ -150,15 +192,19 @@ export default function CameraCapture({
   if (previewUrl) {
     return (
       <div className={cn("space-y-3", className)}>
-        <div className="relative rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-700">
+        <div className="relative rounded-2xl overflow-hidden bg-bg-tertiary">
           {/* eslint-disable-next-line @next/next/no-img-element -- blob preview URL from camera capture */}
-          <img src={previewUrl} alt="Captured" className="w-full h-56 object-cover" />
+          <img
+            src={previewUrl}
+            alt="รูปที่ถ่ายไว้"
+            className="w-full h-56 object-cover"
+          />
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onClear}
-            className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium"
+            className={cn(secondaryButtonClass, "flex-1")}
           >
             {mergedLabels.retake}
           </button>
@@ -169,11 +215,25 @@ export default function CameraCapture({
 
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="relative rounded-2xl overflow-hidden bg-gray-900">
+      {error ? (
+        <StatusAlert
+          variant="error"
+          message={error}
+          action={{
+            label: "ลองอีกครั้ง",
+            onClick: () => {
+              setError(null);
+              void startCamera();
+            },
+          }}
+        />
+      ) : null}
+
+      <div className="relative rounded-2xl overflow-hidden bg-text-primary">
         <video
           ref={videoRef}
           className={cn(
-            "w-full h-56 object-cover bg-gray-900",
+            "w-full h-56 object-cover bg-text-primary",
             !stream && "hidden"
           )}
           playsInline
@@ -181,23 +241,25 @@ export default function CameraCapture({
           autoPlay
         />
         {!stream && (
-          <div className="w-full h-56 flex flex-col items-center justify-center text-gray-400 gap-2 bg-gray-100 dark:bg-gray-700">
-            <VideoOff className="w-6 h-6" />
-            <span className="text-sm text-gray-500 dark:text-gray-300">
-              {error || mergedLabels.idle}
+          <div className="w-full h-56 flex flex-col items-center justify-center text-text-tertiary gap-2 bg-bg-tertiary px-4">
+            <VideoOff className="w-6 h-6" aria-hidden />
+            <span className="text-sm text-text-secondary text-center text-pretty">
+              {mergedLabels.idle}
             </span>
           </div>
         )}
       </div>
+
       <div className="flex gap-2">
         {!stream ? (
           <button
             type="button"
-            onClick={startCamera}
+            onClick={() => void startCamera()}
             disabled={isStarting}
-            className="flex-1 py-3 rounded-xl bg-[#06C755] text-white font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+            aria-busy={isStarting}
+            className={primaryButtonClass}
           >
-            <Camera className="w-4 h-4" />
+            <Camera className="w-4 h-4" aria-hidden />
             {isStarting ? "กำลังเปิดกล้อง..." : mergedLabels.start}
           </button>
         ) : (
@@ -205,9 +267,9 @@ export default function CameraCapture({
             <button
               type="button"
               onClick={capturePhoto}
-              className="flex-1 py-3 rounded-xl bg-[#06C755] text-white font-medium flex items-center justify-center gap-2"
+              className={primaryButtonClass}
             >
-              <Camera className="w-4 h-4" />
+              <Camera className="w-4 h-4" aria-hidden />
               {mergedLabels.capture}
             </button>
             <button
@@ -216,10 +278,10 @@ export default function CameraCapture({
                 stopCamera();
                 setError(null);
               }}
-              className="px-4 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+              className={cn(secondaryButtonClass, "px-4 shrink-0")}
               aria-label="ปิดกล้อง"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4" aria-hidden />
             </button>
           </>
         )}

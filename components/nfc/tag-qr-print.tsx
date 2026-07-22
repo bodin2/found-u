@@ -24,7 +24,7 @@ export default function TagQrPrint({ tagUrl, tagId, itemName, className }: TagQr
     QRCode.toCanvas(canvasRef.current, absoluteUrl, {
       width: 200,
       margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
+      color: { dark: "#191919", light: "#ffffff" },
     }).catch(console.error);
   }, [tagUrl]);
 
@@ -34,21 +34,25 @@ export default function TagQrPrint({ tagUrl, tagId, itemName, className }: TagQr
 
   return (
     <div className={cn("nfc-print-area", className)}>
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 text-center print:border-0 print:shadow-none">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Found-U NFC</p>
-        <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-1">{itemName}</h3>
-        <p className="text-sm text-gray-500 mb-4">สแกนเมื่อพบของนี้</p>
+      <div className="bg-bg-card border border-border-light rounded-2xl p-6 text-center print:border-0 print:shadow-none">
+        <p className="text-xs text-text-secondary mb-2">Found-U · NFC</p>
+        <h3 className="mb-1 break-words text-balance text-base font-medium leading-[1.4] text-text-primary">
+          {itemName}
+        </h3>
+        <p className="mb-4 text-pretty text-base leading-[1.5] text-text-secondary">
+          สแกนเมื่อพบของนี้
+        </p>
         <canvas ref={canvasRef} className="mx-auto rounded-lg" />
-        <p className="text-xs text-gray-400 mt-3 font-mono">{tagId}</p>
-        <p className="text-xs text-gray-500 mt-2 break-all px-4">{tagUrl}</p>
+        <p className="text-xs text-text-secondary mt-3 font-mono">{tagId}</p>
+        <p className="text-xs text-text-secondary mt-2 break-all px-4">{tagUrl}</p>
       </div>
 
       <button
         type="button"
         onClick={handlePrint}
-        className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 print:hidden"
+        className="mt-4 w-full min-h-11 flex items-center justify-center gap-2 py-3 rounded-full border border-border-light text-text-primary hover:bg-bg-secondary print:hidden touch-manipulation"
       >
-        <Printer className="w-5 h-5" />
+        <Printer className="w-5 h-5" aria-hidden />
         พิมพ์ QR Code
       </button>
 

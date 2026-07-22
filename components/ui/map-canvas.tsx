@@ -45,7 +45,7 @@ const PIN_SVG = encodeURIComponent(
 
 const USER_PIN_SVG = encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" fill="none">
-    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z" fill="#2563eb" stroke="#ffffff" stroke-width="1.5"/>
+    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z" fill="#3B82F6" stroke="#ffffff" stroke-width="1.5"/>
     <circle cx="12" cy="12" r="4.5" fill="#ffffff"/>
   </svg>`
 );
@@ -333,37 +333,37 @@ export default function MapCanvas({
       <div
         ref={containerRef}
         className={cn(
-          "map-canvas-root relative z-0 isolate w-full min-w-0 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700",
+          "map-canvas-root relative z-0 isolate w-full min-w-0 overflow-hidden rounded-2xl border border-border-light",
           mode === "polygon" && "map-polygon-mode",
           className ?? "h-[360px] min-h-[280px]"
         )}
       />
       {showVertexList && vertexRows.length > 0 && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3">
-          <p className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+        <div className="rounded-xl border border-border-light bg-bg-secondary p-3">
+          <p className="mb-2 text-xs font-medium text-text-primary">
             จุดขอบเขต ({vertexRows.length} จุด)
           </p>
-          <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600">
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-border-light">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-gray-100 dark:bg-gray-600 text-left text-gray-600 dark:text-gray-300">
+              <thead className="sticky top-0 bg-bg-tertiary text-left text-text-secondary">
                 <tr>
                   <th className="px-3 py-2 font-medium w-12">#</th>
                   <th className="px-3 py-2 font-medium">Latitude</th>
                   <th className="px-3 py-2 font-medium">Longitude</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-600 bg-white dark:bg-gray-700">
+              <tbody className="divide-y divide-border-light bg-bg-card">
                 {vertexRows.map((point, index) => (
                   <tr key={`${index}-${point.lat}-${point.lng}`}>
                     <td className="px-3 py-2">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#06C755] text-[11px] font-semibold text-white">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-line-green-cta text-xs font-semibold text-white">
                         {index + 1}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono text-gray-700 dark:text-gray-200">
+                    <td className="px-3 py-2 font-mono text-text-primary">
                       {point.lat.toFixed(6)}
                     </td>
-                    <td className="px-3 py-2 font-mono text-gray-700 dark:text-gray-200">
+                    <td className="px-3 py-2 font-mono text-text-primary">
                       {point.lng.toFixed(6)}
                     </td>
                   </tr>

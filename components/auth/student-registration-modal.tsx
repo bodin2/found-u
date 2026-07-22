@@ -19,6 +19,7 @@ import {
 import { AUTH_COPY } from "@/lib/auth-copy";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
 import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
 
 interface StudentRegistrationModalProps {
@@ -34,6 +35,7 @@ export function StudentRegistrationModal({ open }: StudentRegistrationModalProps
 
   const isVisible = open && !!user;
   useLockBodyScroll(isVisible);
+  useFocusTrap(panelRef, { active: isVisible, restoreFocus: true });
 
   useEffect(() => {
     if (isVisible && panelRef.current) {
@@ -45,7 +47,7 @@ export function StudentRegistrationModal({ open }: StudentRegistrationModalProps
 
   return createPortal(
     <div
-      className="overlay-modal overlay-modal-top fixed inset-0 flex items-center justify-center bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
+      className="overlay-modal overlay-modal-top fixed inset-0 flex items-center justify-center bg-black/40 p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
       role="presentation"
     >
       <div

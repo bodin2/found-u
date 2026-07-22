@@ -1,6 +1,5 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import { useAppMode, type AppMode } from "@/contexts/app-mode-context";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +25,12 @@ export function ModeSwitcher({
   const { mode, setMode } = useAppMode();
   const onAccent = tone === "on-accent";
   const focus = onAccent ? focusRing.onAccent : focusRing.default;
-  const compactPad = onAccent ? "px-3 py-1.5 min-h-8" : variant === "compact" ? "px-2.5 py-1" : "px-3.5 py-1.5";
+  const compactPad =
+    onAccent
+      ? "px-3 py-2 min-h-11"
+      : variant === "compact"
+        ? "px-3 py-2 min-h-11"
+        : "px-3.5 py-2 min-h-11";
 
   const handleSelect = (next: AppMode) => {
     if (next === mode) return;
@@ -39,7 +43,7 @@ export function ModeSwitcher({
         "inline-flex items-center rounded-full p-0.5",
         onAccent
           ? "bg-black/10 border border-white/30"
-          : "bg-bg-tertiary/80 dark:bg-white/5 backdrop-blur-md border border-border-light/60 dark:border-white/10",
+          : "bg-bg-tertiary border border-border-light/60",
         variant === "compact" ? "text-xs" : "text-sm",
         className
       )}
@@ -52,15 +56,15 @@ export function ModeSwitcher({
         aria-selected={mode === "classic"}
         onClick={() => handleSelect("classic")}
         className={cn(
-          "rounded-full font-semibold transition-colors duration-200",
+          "rounded-full font-medium transition-colors duration-200 touch-manipulation",
           focus,
           compactPad,
           mode === "classic"
             ? onAccent
-              ? "bg-white text-text-on-light shadow-sm"
+              ? "bg-white text-text-on-light"
               : "bg-bg-card text-text-primary"
             : onAccent
-              ? "text-white hover:text-white/95"
+              ? "text-white/90 hover:text-white"
               : "text-text-secondary hover:text-text-primary"
         )}
       >
@@ -72,20 +76,19 @@ export function ModeSwitcher({
         aria-selected={mode === "agent"}
         onClick={() => handleSelect("agent")}
         className={cn(
-          "rounded-full font-semibold transition-colors duration-200 inline-flex items-center gap-1",
+          "rounded-full font-medium transition-colors duration-200 touch-manipulation",
           focus,
           compactPad,
           mode === "agent"
             ? onAccent
-              ? "bg-white text-line-green shadow-sm"
-              : "bg-line-green text-white"
+              ? "bg-white text-line-green-link"
+              : "bg-line-green-cta text-white"
             : onAccent
-              ? "text-white hover:text-white/95"
+              ? "text-white/90 hover:text-white"
               : "text-text-secondary hover:text-text-primary"
         )}
       >
-        <Sparkles className={cn(variant === "compact" ? "w-3 h-3" : "w-3.5 h-3.5")} />
-        {variant === "compact" ? "AI" : "โหมด AI"}
+        {variant === "compact" ? "ผู้ช่วย" : "โหมดผู้ช่วย"}
       </button>
     </div>
   );
