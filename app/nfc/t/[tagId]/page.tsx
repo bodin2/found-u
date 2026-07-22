@@ -14,9 +14,11 @@ export default function NfcTagDeepLinkPage({
   useEffect(() => {
     const run = async () => {
       const resolved = await Promise.resolve(params);
-      const tagId = resolved.tagId?.toUpperCase();
+      const tagId = resolved.tagId?.toUpperCase()?.trim();
       if (tagId) {
         router.replace(`/nfc/found?tag=${encodeURIComponent(tagId)}`);
+      } else {
+        router.replace("/nfc");
       }
     };
     void run();

@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { Radio, Search, Loader2, Ban } from "lucide-react";
+import { Radio, Search, Loader2, Ban, RotateCcw } from "lucide-react";
 import { getAllNfcTags, updateNfcTag } from "@/lib/database";
 import { NFC_TAG_STATUS_CONFIG, CATEGORIES, type NfcTag } from "@/lib/types";
 import { cn, formatThaiDate } from "@/lib/utils";
@@ -43,6 +43,19 @@ export default function AdminNfcPage() {
     );
   };
 
+  const handleReenable = async (tag: NfcTag) => {
+    const ok = await showConfirm({
+      title: "เปิดใช้งานแท็กอีกครั้ง",
+      message: `เปิด Tag ${tag.id} กลับเป็นใช้งานปกติ?`,
+      confirmLabel: "เปิดใช้งาน",
+    });
+    if (!ok) return;
+    await updateNfcTag(tag.id, { status: "active" });
+    setTags((prev) =>
+      prev.map((t) => (t.id === tag.id ? { ...t, status: "active" } : t))
+    );
+  };
+
   const stats = {
     total: tags.length,
     lost: tags.filter((t) => t.status === "lost").length,
@@ -70,13 +83,21 @@ export default function AdminNfcPage() {
         </td>
         <td className="p-3 text-gray-500 whitespace-nowrap">{formatThaiDate(tag.registeredAt)}</td>
         <td className="p-3">
-          {tag.status !== "disabled" && (
+          {tag.status !== "disabled" ? (
             <button
               type="button"
               onClick={() => void handleDisable(tag)}
               className="text-red-500 hover:text-red-600 flex items-center gap-1"
             >
               <Ban className="w-4 h-4" /> ปิด
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleReenable(tag)}
+              className="text-[#06C755] hover:text-[#05b34d] flex items-center gap-1"
+            >
+              <RotateCcw className="w-4 h-4" /> เปิดใหม่
             </button>
           )}
         </td>
@@ -113,13 +134,21 @@ export default function AdminNfcPage() {
           Owner: {tag.ownerId}
         </p>
         <p className="text-xs text-gray-400">{formatThaiDate(tag.registeredAt)}</p>
-        {tag.status !== "disabled" && (
+        {tag.status !== "disabled" ? (
           <button
             type="button"
             onClick={() => void handleDisable(tag)}
             className="text-sm text-red-500 flex items-center gap-1"
           >
             <Ban className="w-4 h-4" /> ปิดใช้งาน
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleReenable(tag)}
+            className="text-sm text-[#06C755] flex items-center gap-1"
+          >
+            <RotateCcw className="w-4 h-4" /> เปิดใช้งานใหม่
           </button>
         )}
       </div>

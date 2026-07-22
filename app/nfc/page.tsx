@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Radio, Plus, Tags, Search } from "lucide-react";
 import Header from "@/components/layout/header";
@@ -9,6 +10,7 @@ import BottomNav from "@/components/layout/bottom-nav";
 import AppShell from "@/components/layout/app-shell";
 import { useAuth } from "@/contexts/auth-context";
 import LoginPrompt from "@/components/auth/login-prompt";
+import { fetchMyNfcDashboardApi } from "@/lib/nfc-api";
 
 const actions = [
   {
@@ -39,6 +41,24 @@ const actions = [
 
 export default function NfcHubPage() {
   const { user, loading: authLoading, appSettings } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!user?.uid || appSettings.nfcEnabled === false) return;
+    let cancelled = false;
+    void fetchMyNfcDashboardApi()
+      .then((data) => {
+        if (!cancelled) {
+          setPendingCount(data.reports.filter((r) => r.status === "pending").length);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPendingCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, appSettings.nfcEnabled]);
 
   if (authLoading && !user) {
     return (
@@ -52,7 +72,7 @@ export default function NfcHubPage() {
     return (
       <AppShell>
         <Header title="NFC Tag" showBack />
-        <LoginPrompt />
+        <LoginPrompt returnTo="/nfc" />
         <BottomNav />
       </AppShell>
     );
@@ -86,6 +106,11 @@ export default function NfcHubPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             ติดแท็ก NFC บนของสำคัญ เมื่อมีคนพบจะแจ้งถึงคุณผ่านแอปได้ทันที
           </p>
+          {pendingCount > 0 && (
+            <p className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-300">
+              มีข้อความจากผู้พบรออ่าน {pendingCount} รายการ
+            </p>
+          )}
         </div>
 
         {actions.map((item) => (
@@ -94,8 +119,13 @@ export default function NfcHubPage() {
             href={item.href}
             className="flex items-center gap-4 p-4 bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 hover:shadow-md transition-shadow"
           >
-            <div className={`p-3 rounded-xl ${item.color}`}>
+            <div className={`p-3 rounded-xl ${item.color} relative`}>
               <item.icon className={`w-6 h-6 ${item.iconColor}`} />
+              {item.href === "/nfc/my-tags" && pendingCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+              )}
             </div>
             <div>
               <p className="font-semibold text-gray-900 dark:text-white">{item.title}</p>

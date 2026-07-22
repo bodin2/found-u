@@ -180,6 +180,7 @@ function mapNfcTagRow(row: DbRow): NfcTag {
     readOnlyLocked: row.read_only_locked === true,
     lostItemId: asNullableString(row.lost_item_id),
     lastFoundReportId: asNullableString(row.last_found_report_id),
+    ndefWrittenAt: row.ndef_written_at ? timestampToDate(row.ndef_written_at) : undefined,
     registeredAt: timestampToDate(row.registered_at),
     updatedAt: timestampToDate(row.updated_at),
   };
@@ -1410,14 +1411,19 @@ export function subscribeToNfcTagsByOwnerId(ownerId: string, callback: (tags: Nf
   });
 }
 
-export async function updateNfcTag(tagId: string, data: Partial<Omit<NfcTag, "id" | "registeredAt">>): Promise<void> {
+export async function updateNfcTag(
+  tagId: string,
+  data: Partial<Omit<NfcTag, "id" | "registeredAt" | "ownerId" | "ndefWrittenAt">> & {
+    ndefWrittenAt?: Date | null;
+  }
+): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase
     .from(COLLECTIONS.NFC_TAGS)
     .update(
       stripUndefined({
         tag_uid: data.tagUid,
-        owner_id: data.ownerId,
+        // owner_id intentionally omitted — ownership transfer blocked
         item_name: data.itemName,
         category: data.category,
         description: data.description,
@@ -1426,6 +1432,12 @@ export async function updateNfcTag(tagId: string, data: Partial<Omit<NfcTag, "id
         read_only_locked: data.readOnlyLocked,
         lost_item_id: data.lostItemId,
         last_found_report_id: data.lastFoundReportId,
+        ndef_written_at:
+          data.ndefWrittenAt === null
+            ? null
+            : data.ndefWrittenAt
+              ? toIso(data.ndefWrittenAt)
+              : undefined,
         updated_at: new Date().toISOString(),
       })
     )

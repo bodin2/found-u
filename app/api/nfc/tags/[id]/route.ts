@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAuthRequest, updateNfcTagStatusAdmin } from "@/lib/nfc-server";
+import { verifyAuthRequest, updateNfcTagAdmin } from "@/lib/nfc-server";
 import { parseJsonBody } from "@/lib/parse-request";
-import { updateNfcTagStatusSchema } from "@/lib/validations/nfc";
+import { updateNfcTagSchema } from "@/lib/validations/nfc";
+import type { ItemCategory } from "@/lib/types";
 
 export async function PATCH(
   request: NextRequest,
@@ -14,11 +15,24 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const parsed = await parseJsonBody(request, updateNfcTagStatusSchema);
+    const parsed = await parseJsonBody(request, updateNfcTagSchema);
     if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
-    const { status, lostItemId } = parsed.data;
+    const { status, lostItemId, itemName, description, category, contacts, ndefWritten } =
+      parsed.data;
 
-    await updateNfcTagStatusAdmin(id, user.uid, status, lostItemId);
+    await updateNfcTagAdmin(id, user.uid, {
+      status,
+      lostItemId,
+      itemName,
+      description,
+      category: category as ItemCategory | undefined,
+      contacts,
+      ...(ndefWritten === true
+        ? { ndefWrittenAt: new Date().toISOString() }
+        : ndefWritten === false
+          ? { ndefWrittenAt: null }
+          : {}),
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";

@@ -14,7 +14,7 @@ import TagQrPrint from "@/components/nfc/tag-qr-print";
 import { type ContactInfo, type ContactType, type ItemCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { buildTagUrl, isWebNfcSupported, writeTagUrl, getNfcErrorMessage } from "@/lib/nfc";
-import { registerNfcTagApi } from "@/lib/nfc-api";
+import { registerNfcTagApi, updateNfcTagApi } from "@/lib/nfc-api";
 import { useAuth } from "@/contexts/auth-context";
 import { useCategories, useContactTypes } from "@/contexts/DataContext";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
@@ -129,6 +129,11 @@ export default function NfcRegisterPage() {
             ? result.tagUrl
             : buildTagUrl(result.tagId, appSettings.nfcPublicBaseUrl || window.location.origin);
           await writeTagUrl(url, { makeReadOnly: readOnlyLocked });
+          try {
+            await updateNfcTagApi(result.tagId, { ndefWritten: true });
+          } catch {
+            // best-effort audit flag
+          }
           setStep("done");
         } catch (writeErr) {
           await showAlert({
@@ -158,6 +163,11 @@ export default function NfcRegisterPage() {
         ? registeredTag.tagUrl
         : buildTagUrl(registeredTag.tagId, appSettings.nfcPublicBaseUrl || window.location.origin);
       await writeTagUrl(url, { makeReadOnly: readOnlyLocked });
+      try {
+        await updateNfcTagApi(registeredTag.tagId, { ndefWritten: true });
+      } catch {
+        // best-effort
+      }
       setStep("done");
     } catch (err) {
       await showAlert({
@@ -181,7 +191,19 @@ export default function NfcRegisterPage() {
     return (
       <AppShell>
         <Header title="ลงทะเบียน Tag" showBack />
-        <LoginPrompt />
+        <LoginPrompt returnTo="/nfc/register" />
+        <BottomNav />
+      </AppShell>
+    );
+  }
+
+  if (appSettings.nfcEnabled === false) {
+    return (
+      <AppShell>
+        <Header title="ลงทะเบียน Tag" showBack />
+        <main className="px-4 py-8 text-center">
+          <p className="text-gray-600 dark:text-gray-400">ระบบ NFC ถูกปิดใช้งานชั่วคราว</p>
+        </main>
         <BottomNav />
       </AppShell>
     );
@@ -260,7 +282,7 @@ export default function NfcRegisterPage() {
           <div className="rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 text-sm text-amber-800 dark:text-amber-200">
             <p className="font-medium">อุปกรณ์นี้ไม่รองรับ Web-NFC</p>
             <p className="mt-1">
-              โหมด Qr Code ; ลงทะเบียนแล้วพิมพ์ QR ติดบนของได้เลย
+              โหมด QR Code — ลงทะเบียนแล้วพิมพ์ QR ติดบนของได้เลย
             </p>
           </div>
         )}
@@ -389,7 +411,15 @@ export default function NfcRegisterPage() {
             {contacts.length < 3 && (
               <button
                 type="button"
-                onClick={() => setContacts([...contacts, { type: "line", value: "" }])}
+                onClick={() =>
+                  setContacts([
+                    ...contacts,
+                    {
+                      type: (contactTypes[0]?.value as ContactType) || "line",
+                      value: "",
+                    },
+                  ])
+                }
                 className="mt-2 flex items-center gap-1 text-sm text-[#06C755]"
               >
                 <Plus className="w-4 h-4" /> เพิ่มช่องทาง

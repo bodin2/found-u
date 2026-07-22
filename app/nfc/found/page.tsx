@@ -2,29 +2,30 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, Loader2, MapPin, Package } from "lucide-react";
+import { CheckCircle2, Loader2, MapPin, Package, Navigation } from "lucide-react";
 import Header from "@/components/layout/header";
 import BottomNav from "@/components/layout/bottom-nav";
 import AppShell from "@/components/layout/app-shell";
 import LoginPrompt from "@/components/auth/login-prompt";
 import NfcScanner from "@/components/nfc/nfc-scanner";
-import { CATEGORIES, type ContactInfo, type ContactType } from "@/lib/types";
+import { CATEGORIES, type ContactInfo, type ContactType, type LocationCoords } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { extractTagIdFromUrl } from "@/lib/nfc";
 import { resolveNfcTagApi, submitNfcFoundReportApi, type NfcResolveResult } from "@/lib/nfc-api";
 import { subscribeToContactTypes, type ContactTypeConfig } from "@/lib/database";
 import { useAuth } from "@/contexts/auth-context";
-import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { saveReturnTo } from "@/lib/auth-return-to";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { logNfcFoundReported } from "@/lib/logger";
 import { StatusAlert } from "@/components/ui/status-alert";
+import { Radio } from "lucide-react";
 
 function NfcFoundContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, appSettings } = useAuth();
   const { showAlert, dialog } = useAppDialog();
 
   const [contactTypes, setContactTypes] = useState<ContactTypeConfig[]>([]);
@@ -33,35 +34,29 @@ function NfcFoundContent() {
   const [loadingTag, setLoadingTag] = useState(false);
   const [message, setMessage] = useState("");
   const [locationFound, setLocationFound] = useState("");
+  const [locationCoords, setLocationCoords] = useState<LocationCoords | undefined>();
+  const [locating, setLocating] = useState(false);
   const [finderContacts, setFinderContacts] = useState<ContactInfo[]>([
     { type: "line", value: "" },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const contactSeededRef = useRef(false);
+
+  const returnPath = `/nfc/found${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
 
   useEffect(() => {
     return subscribeToContactTypes((types) => {
       setContactTypes(types);
-      if (types.length > 0) {
+      if (!contactSeededRef.current && types.length > 0) {
+        contactSeededRef.current = true;
         setFinderContacts([{ type: types[0].value as ContactType, value: "" }]);
       }
     });
   }, []);
 
-  useEffect(() => {
-    const fromUrl = searchParams.get("tag");
-    if (fromUrl) {
-      setTagId(fromUrl.toUpperCase());
-      void loadTag(fromUrl);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!authLoading && !user) router.push(AUTH_ROUTES.hub);
-  }, [user, authLoading, router]);
-
-  const loadTag = async (id: string) => {
+  const loadTag = useCallback(async (id: string) => {
     setLoadingTag(true);
     setError("");
     setResolved(null);
@@ -75,11 +70,49 @@ function NfcFoundContent() {
     } finally {
       setLoadingTag(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("tag");
+    if (fromUrl) {
+      setTagId(fromUrl.toUpperCase());
+      void loadTag(fromUrl);
+    }
+  }, [searchParams, loadTag]);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      saveReturnTo(returnPath);
+    }
+  }, [user, authLoading, returnPath]);
 
   const handleScan = (result: { tagId?: string; url?: string }) => {
     const id = result.tagId || (result.url ? extractTagIdFromUrl(result.url) : null);
     if (id) void loadTag(id);
+  };
+
+  const handleAttachLocation = () => {
+    if (!navigator.geolocation) {
+      void showAlert({ title: "ไม่รองรับ", message: "อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง" });
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocationCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          source: "gps",
+        });
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        void showAlert({ title: "ไม่สำเร็จ", message: "ไม่สามารถอ่านตำแหน่งได้" });
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,6 +125,7 @@ function NfcFoundContent() {
         tagId,
         finderMessage: message.trim(),
         locationFound: locationFound.trim() || undefined,
+        locationCoords,
         finderContacts: finderContacts.filter((c) => c.value.trim()),
       });
       await logNfcFoundReported(tagId, user?.email ?? undefined, user?.displayName ?? undefined);
@@ -118,7 +152,24 @@ function NfcFoundContent() {
     return (
       <AppShell>
         <Header title="แจ้งพบของ (NFC)" showBack />
-        <LoginPrompt />
+        <LoginPrompt
+          returnTo={returnPath}
+          description="เข้าสู่ระบบเพื่อส่งข้อความถึงเจ้าของแท็ก"
+          feature={tagId ? `แท็ก: ${tagId}` : undefined}
+        />
+        <BottomNav />
+      </AppShell>
+    );
+  }
+
+  if (appSettings.nfcEnabled === false) {
+    return (
+      <AppShell>
+        <Header title="แจ้งพบของ (NFC)" showBack />
+        <main className="px-4 py-8 text-center">
+          <Radio className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">ระบบ NFC ถูกปิดใช้งานชั่วคราว</p>
+        </main>
         <BottomNav />
       </AppShell>
     );
@@ -191,6 +242,13 @@ function NfcFoundContent() {
             {resolved.isOwner ? (
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 text-center text-sm text-blue-700 dark:text-blue-300">
                 นี่เป็นแท็กของคุณ — ไม่สามารถแจ้งพบของได้
+                <button
+                  type="button"
+                  onClick={() => router.push("/nfc/my-tags")}
+                  className="block mx-auto mt-3 text-[#06C755] font-medium"
+                >
+                  ไปที่แท็กของฉัน
+                </button>
               </div>
             ) : (
               <form
@@ -218,6 +276,19 @@ function NfcFoundContent() {
                     className="w-full mt-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
                     placeholder="เช่น ห้องสมุด ชั้น 2"
                   />
+                  <button
+                    type="button"
+                    onClick={handleAttachLocation}
+                    disabled={locating}
+                    className="mt-2 flex items-center gap-2 text-sm text-[#06C755] font-medium disabled:opacity-50"
+                  >
+                    <Navigation className="w-4 h-4" />
+                    {locating
+                      ? "กำลังระบุตำแหน่ง..."
+                      : locationCoords
+                        ? "อัปเดตพิกัด GPS แล้ว"
+                        : "แนบตำแหน่งปัจจุบัน"}
+                  </button>
                 </div>
                 <div>
                   <label className="text-sm font-medium">ช่องทางติดต่อของคุณ (ไม่บังคับ)</label>

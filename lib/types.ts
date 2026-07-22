@@ -93,6 +93,7 @@ export interface AppSettings {
   // NFC Tag settings
   nfcEnabled?: boolean;
   nfcPublicBaseUrl?: string;
+  /** @deprecated Always requires login; kept for settings JSON backward compat only */
   nfcRequireLoginToReport?: boolean;
 
   /** ปิดการเข้าสู่ระบบจากหน้า Landing (แสดง "พบกันเร็วๆนี้") */
@@ -383,6 +384,8 @@ export interface NfcTag {
   readOnlyLocked: boolean;
   lostItemId?: string;
   lastFoundReportId?: string;
+  /** ISO timestamp when NDEF URL was successfully written (optional) */
+  ndefWrittenAt?: Date;
   registeredAt: Date;
   updatedAt: Date;
 }

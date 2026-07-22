@@ -3,12 +3,15 @@
 import { useRouter } from "next/navigation";
 import { LogIn, Lock, ArrowRight } from "lucide-react";
 import { AUTH_ROUTES } from "@/lib/auth-routes";
+import { isAllowedReturnPath, saveReturnTo } from "@/lib/auth-return-to";
 
 interface LoginPromptProps {
   title?: string;
   description?: string;
   feature?: string;
   showBackButton?: boolean;
+  /** Path (+ query) to resume after login, e.g. `/nfc/found?tag=ABC` */
+  returnTo?: string;
 }
 
 export default function LoginPrompt({
@@ -16,8 +19,28 @@ export default function LoginPrompt({
   description = "คุณต้องเข้าสู่ระบบเพื่อใช้งานฟีเจอร์นี้",
   feature,
   showBackButton = true,
+  returnTo,
 }: LoginPromptProps) {
   const router = useRouter();
+
+  const handleLogin = () => {
+    const path =
+      returnTo && isAllowedReturnPath(returnTo)
+        ? returnTo
+        : typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : undefined;
+
+    if (path && isAllowedReturnPath(path)) {
+      saveReturnTo(path);
+      router.push(
+        `${AUTH_ROUTES.login}?returnTo=${encodeURIComponent(path)}`
+      );
+      return;
+    }
+
+    router.push(AUTH_ROUTES.login);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
@@ -47,7 +70,7 @@ export default function LoginPrompt({
       <div className="w-full max-w-xs space-y-3 mt-4">
         <button
           type="button"
-          onClick={() => router.push(AUTH_ROUTES.login)}
+          onClick={handleLogin}
           className="w-full min-h-11 py-3.5 bg-line-green-cta text-white rounded-full font-medium hover:bg-line-green-cta-hover transition-colors flex items-center justify-center gap-2 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-green/40 focus-visible:ring-offset-2"
         >
           <LogIn className="w-5 h-5" aria-hidden />

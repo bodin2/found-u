@@ -42,6 +42,12 @@ export async function POST(request: NextRequest) {
     if (message === "nfc_disabled") {
       return NextResponse.json({ error: message, message: "ระบบ NFC ถูกปิดใช้งานชั่วคราว" }, { status: 403 });
     }
+    if (message === "tag_id_generation_failed") {
+      return NextResponse.json(
+        { error: message, message: "สร้างรหัสแท็กไม่สำเร็จ กรุณาลองใหม่" },
+        { status: 500 }
+      );
+    }
     console.error("NFC register error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

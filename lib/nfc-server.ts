@@ -47,29 +47,29 @@ export function buildTagPublicUrl(tagId: string, settings?: AppSettings): string
   return `/nfc/t/${normalizeTagId(tagId)}`;
 }
 
+const NFC_FOUND_RATE_LIMIT = 20;
+
+/** Soft rate limit: count successful found reports in the last hour (no ai_usage). */
 export async function checkNfcFoundRateLimit(userId: string): Promise<{ allowed: boolean; message?: string }> {
   const admin = createAdminClient();
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const { data: usage } = await admin
-    .from("ai_usage")
-    .select("endpoint")
-    .eq("user_id", userId)
-    .gte("created_at", oneHourAgo.toISOString());
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count, error } = await admin
+    .from("nfc_found_reports")
+    .select("id", { count: "exact", head: true })
+    .eq("finder_user_id", userId)
+    .gte("created_at", oneHourAgo);
 
-  const nfcCount = (usage || []).filter((entry) => entry.endpoint === "nfc-found").length;
-  const limit = 20;
-  if (nfcCount >= limit) {
+  if (error) {
+    console.error("NFC rate limit check error:", error);
+    return { allowed: true };
+  }
+
+  if ((count ?? 0) >= NFC_FOUND_RATE_LIMIT) {
     return {
       allowed: false,
       message: "คุณส่งรายงานพบของบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
     };
   }
-
-  await admin.from("ai_usage").insert({
-    user_id: userId,
-    endpoint: "nfc-found",
-    created_at: new Date().toISOString(),
-  });
 
   return { allowed: true };
 }
@@ -101,15 +101,22 @@ export async function registerNfcTagAdmin(
   }
 
   let tagId = generateNfcTagId();
+  let foundFreeId = false;
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data: existingDoc } = await admin.from("nfc_tags").select("id").eq("id", tagId).maybeSingle();
-    if (!existingDoc) break;
+    if (!existingDoc) {
+      foundFreeId = true;
+      break;
+    }
     tagId = generateNfcTagId();
+  }
+  if (!foundFreeId) {
+    throw new Error("tag_id_generation_failed");
   }
 
   const tagUrl = buildTagPublicUrl(tagId, settings);
 
-  await admin.from("nfc_tags").insert({
+  const { error: insertError } = await admin.from("nfc_tags").insert({
     id: tagId,
     owner_id: ownerId,
     item_name: input.itemName.trim(),
@@ -122,6 +129,12 @@ export async function registerNfcTagAdmin(
     registered_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
+  if (insertError) {
+    if (insertError.code === "23505") {
+      throw new Error("tag_uid_already_registered");
+    }
+    throw insertError;
+  }
 
   return { tagId, tagUrl };
 }
@@ -160,6 +173,8 @@ export interface CreateNfcFoundReportInput {
   locationFound?: string;
   locationCoords?: { lat: number; lng: number; accuracy?: number; source?: string };
   finderContacts?: ContactInfo[];
+  finderEmail?: string;
+  finderName?: string;
 }
 
 export async function createNfcFoundReportAdmin(input: CreateNfcFoundReportInput): Promise<string> {
@@ -194,42 +209,102 @@ export async function createNfcFoundReportAdmin(input: CreateNfcFoundReportInput
     .single();
   if (reportError) throw reportError;
 
-  await admin
+  const { error: tagUpdateError } = await admin
     .from("nfc_tags")
     .update({
       last_found_report_id: report.id,
       updated_at: new Date().toISOString(),
     })
     .eq("id", normalized);
+  if (tagUpdateError) {
+    console.error("NFC last_found_report_id update failed:", tagUpdateError);
+  }
+
+  const settings = await getAppSettingsAdmin();
+  if (settings.notifyOnNewReport !== false) {
+    await admin.from("activity_logs").insert({
+      action: `แจ้งพบของผ่าน NFC Tag: ${tagData.item_name} (${normalized})`,
+      action_type: "create",
+      target_type: "nfcReport",
+      target_id: report.id,
+      target_name: tagData.item_name,
+      user_id: input.finderUserId,
+      user_email: input.finderEmail || null,
+      user_name: input.finderName || null,
+      details: {
+        message: `tag=${normalized}; owner=${tagData.owner_id}`,
+        tagId: normalized,
+        ownerId: tagData.owner_id,
+      },
+      created_at: new Date().toISOString(),
+    });
+  }
 
   return report.id;
 }
 
-export async function updateNfcTagStatusAdmin(
+export interface UpdateNfcTagAdminInput {
+  status?: NfcTagStatus;
+  lostItemId?: string;
+  itemName?: string;
+  description?: string;
+  contacts?: ContactInfo[];
+  category?: ItemCategory;
+  ndefWrittenAt?: string | null;
+}
+
+export async function updateNfcTagAdmin(
   tagId: string,
-  ownerId: string,
-  status: NfcTagStatus,
-  lostItemId?: string
+  actorId: string,
+  input: UpdateNfcTagAdminInput
 ): Promise<void> {
   const admin = createAdminClient();
   const normalized = normalizeTagId(tagId);
   const { data: tagData } = await admin.from("nfc_tags").select("*").eq("id", normalized).maybeSingle();
   if (!tagData) throw new Error("tag_not_found");
 
-  const isOwner = tagData.owner_id === ownerId;
-  const isAdmin = await isAdminUser(ownerId);
+  const isOwner = tagData.owner_id === actorId;
+  const isAdmin = await isAdminUser(actorId);
   if (!isOwner && !isAdmin) throw new Error("forbidden");
 
-  await admin
-    .from("nfc_tags")
-    .update(
-      stripUndefinedAdmin({
-        status,
-        ...(lostItemId ? { lost_item_id: lostItemId } : {}),
+  const patch = stripUndefinedAdmin({
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.lostItemId !== undefined ? { lost_item_id: input.lostItemId } : {}),
+    ...(input.itemName !== undefined ? { item_name: input.itemName.trim() } : {}),
+    ...(input.description !== undefined ? { description: input.description.trim() } : {}),
+    ...(input.contacts !== undefined ? { contacts: input.contacts } : {}),
+    ...(input.category !== undefined ? { category: input.category } : {}),
+    ...(input.ndefWrittenAt !== undefined ? { ndef_written_at: input.ndefWrittenAt } : {}),
+    updated_at: new Date().toISOString(),
+  });
+
+  const { error } = await admin.from("nfc_tags").update(patch).eq("id", normalized);
+  if (error) throw error;
+
+  // Sync linked lost item when marking returned
+  if (input.status === "returned" && tagData.lost_item_id) {
+    const { error: lostError } = await admin
+      .from("lost_items")
+      .update({
+        status: "claimed",
         updated_at: new Date().toISOString(),
       })
-    )
-    .eq("id", normalized);
+      .eq("id", tagData.lost_item_id)
+      .eq("user_id", tagData.owner_id);
+    if (lostError) {
+      console.error("NFC returned: lost item sync failed:", lostError);
+    }
+  }
+}
+
+/** @deprecated Prefer updateNfcTagAdmin */
+export async function updateNfcTagStatusAdmin(
+  tagId: string,
+  ownerId: string,
+  status: NfcTagStatus,
+  lostItemId?: string
+): Promise<void> {
+  await updateNfcTagAdmin(tagId, ownerId, { status, lostItemId });
 }
 
 function stripUndefinedAdmin<T extends Record<string, unknown>>(obj: T): T {
@@ -266,6 +341,7 @@ export async function getOwnerNfcDashboardAdmin(ownerId: string) {
       readOnlyLocked: data.read_only_locked ?? false,
       lostItemId: data.lost_item_id,
       lastFoundReportId: data.last_found_report_id,
+      ndefWrittenAt: data.ndef_written_at ? adminTimestampToIso(data.ndef_written_at) : null,
       registeredAt: adminTimestampToIso(data.registered_at),
       updatedAt: adminTimestampToIso(data.updated_at),
     };
@@ -305,5 +381,6 @@ export async function updateNfcFoundReportStatusAdmin(
     throw new Error("forbidden");
   }
 
-  await admin.from("nfc_found_reports").update({ status }).eq("id", reportId);
+  const { error } = await admin.from("nfc_found_reports").update({ status }).eq("id", reportId);
+  if (error) throw error;
 }

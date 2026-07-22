@@ -18,10 +18,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Product rule: reporting always requires login (nfcRequireLoginToReport retired)
     const user = await verifyAuthRequest(request);
-    if (!user && settings.nfcRequireLoginToReport !== false) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -45,6 +43,7 @@ export async function POST(request: NextRequest) {
       locationFound: locationFound?.trim(),
       locationCoords,
       finderContacts: (finderContacts || []).filter((c) => c.value?.trim()),
+      finderEmail: user.email,
     });
 
     return NextResponse.json({ reportId, success: true });

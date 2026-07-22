@@ -4,13 +4,17 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   AlertCircle,
+  Ban,
   CheckCircle2,
   Loader2,
   MessageSquare,
+  Pencil,
   Radio,
   Search,
+  Wifi,
 } from "lucide-react";
 import Header from "@/components/layout/header";
 import BottomNav from "@/components/layout/bottom-nav";
@@ -20,16 +24,24 @@ import TagQrPrint from "@/components/nfc/tag-qr-print";
 import {
   NFC_TAG_STATUS_CONFIG,
   CATEGORIES,
+  CONTACT_TYPES,
+  type ContactInfo,
+  type ContactType,
+  type ItemCategory,
   type NfcTag,
   type NfcFoundReport,
 } from "@/lib/types";
 import { cn, formatThaiDate, generateTrackingCode } from "@/lib/utils";
-import { buildTagUrl } from "@/lib/nfc";
+import { buildTagUrl, isWebNfcSupported, writeTagUrl, getNfcErrorMessage } from "@/lib/nfc";
+import { getContactHref, getContactTypeLabel } from "@/lib/contact-href";
 import {
   addLostItem,
+  subscribeToNfcTagsByOwnerId,
+  subscribeToNfcFoundReportsByOwnerId,
 } from "@/lib/database";
 import {
   updateNfcTagStatusApi,
+  updateNfcTagApi,
   fetchMyNfcDashboardApi,
   updateNfcReportStatusApi,
 } from "@/lib/nfc-api";
@@ -47,6 +59,15 @@ export default function NfcMyTagsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [expandedTag, setExpandedTag] = useState<string | null>(null);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    itemName: "",
+    category: "" as ItemCategory | "",
+    description: "",
+    contacts: [] as ContactInfo[],
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [writingTagId, setWritingTagId] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     if (!user?.uid) return;
@@ -71,10 +92,20 @@ export default function NfcMyTagsPage() {
     }
 
     setLoading(true);
-    loadDashboard();
+    void loadDashboard();
 
-    const interval = setInterval(loadDashboard, 30000);
-    return () => clearInterval(interval);
+    const unsubTags = subscribeToNfcTagsByOwnerId(user.uid, (next) => {
+      setTags(next);
+      setLoading(false);
+    });
+    const unsubReports = subscribeToNfcFoundReportsByOwnerId(user.uid, (next) => {
+      setReports(next);
+    });
+
+    return () => {
+      unsubTags();
+      unsubReports();
+    };
   }, [user?.uid, loadDashboard]);
 
   const reportsByTag = useMemo(() => {
@@ -88,6 +119,48 @@ export default function NfcMyTagsPage() {
   }, [reports]);
 
   const pendingCount = reports.filter((r) => r.status === "pending").length;
+
+  const startEdit = (tag: NfcTag) => {
+    setEditingTagId(tag.id);
+    setEditForm({
+      itemName: tag.itemName,
+      category: tag.category,
+      description: tag.description || "",
+      contacts: tag.contacts.length
+        ? tag.contacts.map((c) => ({ ...c }))
+        : [{ type: "phone", value: "" }],
+    });
+  };
+
+  const handleSaveEdit = async (tagId: string) => {
+    if (!editForm.itemName.trim() || !editForm.category) {
+      await showAlert({ title: "ข้อมูลไม่ครบ", message: "กรุณากรอกชื่อและประเภท" });
+      return;
+    }
+    const contacts = editForm.contacts.filter((c) => c.value.trim());
+    if (contacts.length === 0) {
+      await showAlert({ title: "ข้อมูลไม่ครบ", message: "กรุณาระบุช่องทางติดต่ออย่างน้อย 1 ช่องทาง" });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await updateNfcTagApi(tagId, {
+        itemName: editForm.itemName.trim(),
+        category: editForm.category as ItemCategory,
+        description: editForm.description.trim(),
+        contacts,
+      });
+      setEditingTagId(null);
+      await loadDashboard();
+    } catch (err) {
+      await showAlert({
+        title: "บันทึกไม่สำเร็จ",
+        message: err instanceof Error ? err.message : "เกิดข้อผิดพลาด",
+      });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleMarkLost = async (tag: NfcTag) => {
     const createLost = await showConfirm({
@@ -180,12 +253,60 @@ export default function NfcMyTagsPage() {
     }
   };
 
+  const handleDisable = async (tag: NfcTag) => {
+    const ok = await showConfirm({
+      title: "ปิดใช้งานแท็ก?",
+      message: "ผู้พบจะไม่สามารถ resolve แท็กนี้ได้อีก จนกว่าแอดมินจะเปิดใหม่",
+      variant: "warning",
+      confirmLabel: "ปิดใช้งาน",
+    });
+    if (!ok) return;
+    try {
+      await updateNfcTagStatusApi(tag.id, "disabled");
+      await loadDashboard();
+    } catch (err) {
+      await showAlert({
+        title: "ไม่สำเร็จ",
+        message: err instanceof Error ? err.message : "เกิดข้อผิดพลาด",
+      });
+    }
+  };
+
+  const handleRetryWrite = async (tag: NfcTag) => {
+    if (!isWebNfcSupported()) {
+      await showAlert({
+        title: "ไม่รองรับ Web NFC",
+        message: "ใช้อุปกรณ์ Android + Chrome หรือพิมพ์ QR แทน",
+      });
+      return;
+    }
+    setWritingTagId(tag.id);
+    try {
+      const url = buildTagUrl(tag.id, appSettings.nfcPublicBaseUrl || window.location.origin);
+      await writeTagUrl(url, { makeReadOnly: tag.readOnlyLocked });
+      await updateNfcTagApi(tag.id, { ndefWritten: true });
+      await loadDashboard();
+      await showAlert({ title: "เขียนแท็กสำเร็จ", message: "URL ถูกเขียนลงแท็กแล้ว" });
+    } catch (err) {
+      await showAlert({
+        title: "เขียนแท็กไม่สำเร็จ",
+        message: getNfcErrorMessage(err),
+      });
+    } finally {
+      setWritingTagId(null);
+    }
+  };
+
   const handleMarkReportViewed = async (report: NfcFoundReport) => {
     if (report.status !== "pending") return;
-    await updateNfcReportStatusApi(report.id, "viewed");
-    setReports((prev) =>
-      prev.map((r) => (r.id === report.id ? { ...r, status: "viewed" } : r))
-    );
+    try {
+      await updateNfcReportStatusApi(report.id, "viewed");
+      setReports((prev) =>
+        prev.map((r) => (r.id === report.id ? { ...r, status: "viewed" } : r))
+      );
+    } catch {
+      // ignore — realtime will refresh
+    }
   };
 
   if ((authLoading && !user) || loading) {
@@ -200,7 +321,20 @@ export default function NfcMyTagsPage() {
     return (
       <AppShell>
         <Header title="แท็กของฉัน" showBack />
-        <LoginPrompt />
+        <LoginPrompt returnTo="/nfc/my-tags" />
+        <BottomNav />
+      </AppShell>
+    );
+  }
+
+  if (appSettings.nfcEnabled === false) {
+    return (
+      <AppShell>
+        <Header title="แท็กของฉัน" showBack />
+        <main className="px-4 py-8 text-center">
+          <Radio className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">ระบบ NFC ถูกปิดใช้งานชั่วคราว</p>
+        </main>
         <BottomNav />
       </AppShell>
     );
@@ -243,6 +377,7 @@ export default function NfcMyTagsPage() {
             const tagReports = reportsByTag.get(tag.id) || [];
             const isExpanded = expandedTag === tag.id;
             const tagUrl = buildTagUrl(tag.id, appSettings.nfcPublicBaseUrl);
+            const isEditing = editingTagId === tag.id;
 
             return (
               <article
@@ -259,6 +394,9 @@ export default function NfcMyTagsPage() {
                       {cat?.icon} {tag.itemName}
                     </p>
                     <p className="text-xs text-gray-400 font-mono mt-1">{tag.id}</p>
+                    {!tag.ndefWrittenAt && (
+                      <p className="text-xs text-amber-600 mt-1">ยังไม่ได้เขียน NDEF ลงแท็ก</p>
+                    )}
                   </div>
                   <span
                     className={cn(
@@ -273,32 +411,149 @@ export default function NfcMyTagsPage() {
 
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-800 pt-4">
-                    {tag.description && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{tag.description}</p>
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        <input
+                          value={editForm.itemName}
+                          onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))}
+                          className="w-full input-line"
+                          placeholder="ชื่อสิ่งของ"
+                        />
+                        <select
+                          value={editForm.category}
+                          onChange={(e) =>
+                            setEditForm((p) => ({
+                              ...p,
+                              category: e.target.value as ItemCategory,
+                            }))
+                          }
+                          className="w-full input-line"
+                        >
+                          {CATEGORIES.map((c) => (
+                            <option key={c.value} value={c.value}>
+                              {c.icon} {c.label}
+                            </option>
+                          ))}
+                        </select>
+                        <textarea
+                          value={editForm.description}
+                          onChange={(e) =>
+                            setEditForm((p) => ({ ...p, description: e.target.value }))
+                          }
+                          rows={2}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
+                          placeholder="รายละเอียด"
+                        />
+                        {editForm.contacts.map((contact, index) => (
+                          <div key={index} className="flex gap-2">
+                            <select
+                              value={contact.type}
+                              onChange={(e) => {
+                                const next = [...editForm.contacts];
+                                next[index] = {
+                                  ...next[index],
+                                  type: e.target.value as ContactType,
+                                };
+                                setEditForm((p) => ({ ...p, contacts: next }));
+                              }}
+                              className="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
+                            >
+                              {CONTACT_TYPES.map((t) => (
+                                <option key={t.value} value={t.value}>
+                                  {t.label}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={contact.value}
+                              onChange={(e) => {
+                                const next = [...editForm.contacts];
+                                next[index] = { ...next[index], value: e.target.value };
+                                setEditForm((p) => ({ ...p, contacts: next }));
+                              }}
+                              className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent"
+                            />
+                          </div>
+                        ))}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={savingEdit}
+                            onClick={() => void handleSaveEdit(tag.id)}
+                            className="flex-1 py-2 rounded-xl bg-[#06C755] text-white text-sm font-medium disabled:opacity-50"
+                          >
+                            {savingEdit ? "กำลังบันทึก..." : "บันทึก"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingTagId(null)}
+                            className="px-4 py-2 rounded-xl text-sm text-gray-500"
+                          >
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {tag.description && (
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {tag.description}
+                          </p>
+                        )}
+
+                        <TagQrPrint tagId={tag.id} tagUrl={tagUrl} itemName={tag.itemName} />
+
+                        <div className="flex flex-wrap gap-2">
+                          {tag.status !== "disabled" && (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(tag)}
+                              className="flex items-center gap-1 px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm font-medium"
+                            >
+                              <Pencil className="w-4 h-4" /> แก้ไข
+                            </button>
+                          )}
+                          {!tag.ndefWrittenAt && tag.status !== "disabled" && (
+                            <button
+                              type="button"
+                              disabled={writingTagId === tag.id}
+                              onClick={() => void handleRetryWrite(tag)}
+                              className="flex items-center gap-1 px-4 py-2 rounded-xl bg-line-green-light text-line-green text-sm font-medium disabled:opacity-50"
+                            >
+                              <Wifi className="w-4 h-4" />
+                              {writingTagId === tag.id ? "กำลังเขียน..." : "เขียนลงแท็ก NFC"}
+                            </button>
+                          )}
+                          {tag.status !== "lost" && tag.status !== "disabled" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleMarkLost(tag)}
+                              className="flex items-center gap-1 px-4 py-2 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm font-medium"
+                            >
+                              <Search className="w-4 h-4" /> แจ้งของหาย
+                            </button>
+                          )}
+                          {tag.status === "lost" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleMarkReturned(tag)}
+                              className="flex items-center gap-1 px-4 py-2 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium"
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> ได้รับคืนแล้ว
+                            </button>
+                          )}
+                          {tag.status !== "disabled" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDisable(tag)}
+                              className="flex items-center gap-1 px-4 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 text-sm font-medium"
+                            >
+                              <Ban className="w-4 h-4" /> ปิดใช้งาน
+                            </button>
+                          )}
+                        </div>
+                      </>
                     )}
-
-                    <TagQrPrint tagId={tag.id} tagUrl={tagUrl} itemName={tag.itemName} />
-
-                    <div className="flex flex-wrap gap-2">
-                      {tag.status !== "lost" && tag.status !== "disabled" && (
-                        <button
-                          type="button"
-                          onClick={() => handleMarkLost(tag)}
-                          className="flex items-center gap-1 px-4 py-2 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm font-medium"
-                        >
-                          <Search className="w-4 h-4" /> แจ้งของหาย
-                        </button>
-                      )}
-                      {tag.status === "lost" && (
-                        <button
-                          type="button"
-                          onClick={() => handleMarkReturned(tag)}
-                          className="flex items-center gap-1 px-4 py-2 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium"
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> ได้รับคืนแล้ว
-                        </button>
-                      )}
-                    </div>
 
                     {tagReports.length > 0 && (
                       <div className="space-y-2">
@@ -316,14 +571,43 @@ export default function NfcMyTagsPage() {
                                 ? "border-[#06C755] bg-[#e8f8ef] dark:bg-[#06C755]/10"
                                 : "border-gray-200 dark:border-gray-700"
                             )}
-                            onClick={() => handleMarkReportViewed(report)}
+                            onClick={() => void handleMarkReportViewed(report)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") handleMarkReportViewed(report);
+                              if (e.key === "Enter") void handleMarkReportViewed(report);
                             }}
                           >
                             <p className="text-gray-800 dark:text-gray-200">{report.finderMessage}</p>
                             {report.locationFound && (
-                              <p className="text-xs text-gray-500 mt-1">📍 {report.locationFound}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                สถานที่: {report.locationFound}
+                              </p>
+                            )}
+                            {report.finderContacts && report.finderContacts.length > 0 && (
+                              <ul className="mt-2 space-y-1">
+                                {report.finderContacts.map((c, i) => {
+                                  const href = getContactHref(c);
+                                  return (
+                                    <li key={i} className="text-xs text-gray-600 dark:text-gray-300">
+                                      <span className="text-gray-400">
+                                        {getContactTypeLabel(c.type)}:{" "}
+                                      </span>
+                                      {href ? (
+                                        <a
+                                          href={href}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[#06C755] underline"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {c.value}
+                                        </a>
+                                      ) : (
+                                        c.value
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
                             )}
                             <p className="text-xs text-gray-400 mt-2">
                               {formatThaiDate(report.createdAt)}
@@ -336,7 +620,10 @@ export default function NfcMyTagsPage() {
 
                     {tag.lostItemId && (
                       <p className="text-xs text-gray-500 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" /> ลิงก์ Lost Item: {tag.lostItemId}
+                        <AlertCircle className="w-3 h-3" />
+                        <Link href="/tracking" className="text-[#06C755] underline">
+                          ดูรายการ Lost ที่ผูกไว้ (ติดตามสถานะ)
+                        </Link>
                       </p>
                     )}
                   </div>

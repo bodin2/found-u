@@ -75,16 +75,23 @@ export async function submitNfcFoundReportApi(input: {
   return data;
 }
 
-export async function updateNfcTagStatusApi(
+export async function updateNfcTagApi(
   tagId: string,
-  status: NfcTagStatus,
-  lostItemId?: string
+  patch: {
+    status?: NfcTagStatus;
+    lostItemId?: string;
+    itemName?: string;
+    description?: string;
+    category?: ItemCategory;
+    contacts?: ContactInfo[];
+    ndefWritten?: boolean;
+  }
 ): Promise<void> {
   const headers = await getAuthHeaders();
   const res = await fetch(`/api/nfc/tags/${encodeURIComponent(tagId)}`, {
     method: "PATCH",
     headers,
-    body: JSON.stringify({ status, lostItemId }),
+    body: JSON.stringify(patch),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -92,11 +99,22 @@ export async function updateNfcTagStatusApi(
   }
 }
 
-function parseNfcTag(raw: NfcTag & { registeredAt: string; updatedAt: string }): NfcTag {
+export async function updateNfcTagStatusApi(
+  tagId: string,
+  status: NfcTagStatus,
+  lostItemId?: string
+): Promise<void> {
+  await updateNfcTagApi(tagId, { status, lostItemId });
+}
+
+function parseNfcTag(
+  raw: NfcTag & { registeredAt: string; updatedAt: string; ndefWrittenAt?: string | null }
+): NfcTag {
   return {
     ...raw,
     registeredAt: new Date(raw.registeredAt),
     updatedAt: new Date(raw.updatedAt),
+    ndefWrittenAt: raw.ndefWrittenAt ? new Date(raw.ndefWrittenAt) : undefined,
   };
 }
 

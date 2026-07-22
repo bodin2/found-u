@@ -932,7 +932,9 @@ export default function AdminSettingsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
           <div className="p-5 border-b border-gray-100 dark:border-gray-700">
             <h2 className="font-semibold text-gray-900 dark:text-white">NFC Tag</h2>
-            <p className="text-sm text-gray-500">เปิด/ปิดระบบลงทะเบียนและแจ้งพบผ่าน NFC</p>
+            <p className="text-sm text-gray-500">
+              เปิด/ปิดระบบลงทะเบียนและแจ้งพบผ่าน NFC — การแจ้งพบต้องล็อกอินเสมอ
+            </p>
           </div>
           <div className="p-5 space-y-4">
             <label className="flex items-center justify-between">

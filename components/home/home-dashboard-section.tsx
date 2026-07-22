@@ -28,8 +28,10 @@ import { cn, formatThaiDate } from "@/lib/utils";
 import {
   subscribeToLostItemsByUserId,
   subscribeToFoundItemsByUserId,
+  subscribeToNfcFoundReportsByOwnerId,
 } from "@/lib/database";
 import { fetchMyNfcDashboardApi } from "@/lib/nfc-api";
+import type { NfcFoundReport } from "@/lib/types";
 
 const LIST_LIMIT = 5;
 
@@ -74,6 +76,7 @@ export function HomeDashboardSection({
   const [lostItems, setLostItems] = useState<LostItem[]>([]);
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [nfcTags, setNfcTags] = useState<NfcTag[]>([]);
+  const [nfcPendingReports, setNfcPendingReports] = useState(0);
 
   const [itemsLoading, setItemsLoading] = useState(false);
   const [nfcLoading, setNfcLoading] = useState(false);
@@ -121,12 +124,33 @@ export function HomeDashboardSection({
   }, [userId]);
 
   useEffect(() => {
+    if (!userId || !nfcEnabled) return;
+
+    let cancelled = false;
+    const unsubReports = subscribeToNfcFoundReportsByOwnerId(userId, (reports) => {
+      if (!cancelled) {
+        setNfcPendingReports(reports.filter((r) => r.status === "pending").length);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubReports();
+    };
+  }, [userId, nfcEnabled]);
+
+  useEffect(() => {
     if (!userId || effectiveMainPanel !== "nfc" || !nfcEnabled) return;
 
     let cancelled = false;
     void fetchMyNfcDashboardApi()
       .then((data) => {
-        if (!cancelled) setNfcTags(data.tags);
+        if (!cancelled) {
+          setNfcTags(data.tags);
+          setNfcPendingReports(
+            data.reports.filter((r: NfcFoundReport) => r.status === "pending").length
+          );
+        }
       })
       .catch(() => {
         if (!cancelled) setNfcTags([]);
@@ -184,10 +208,17 @@ export function HomeDashboardSection({
       { id: "items", label: "รายการของฉัน", icon: Search },
     ];
     if (nfcEnabled) {
-      tabs.push({ id: "nfc", label: "NFC ของฉัน", icon: Radio });
+      tabs.push({
+        id: "nfc",
+        label:
+          nfcPendingReports > 0
+            ? `NFC ของฉัน (${nfcPendingReports > 9 ? "9+" : nfcPendingReports})`
+            : "NFC ของฉัน",
+        icon: Radio,
+      });
     }
     return tabs;
-  }, [nfcEnabled]);
+  }, [nfcEnabled, nfcPendingReports]);
 
   const seeAllHref =
     effectiveMainPanel === "items" ? "/tracking" : "/nfc/my-tags";
