@@ -77,6 +77,24 @@ export interface Database {
         Update: Record<string, Json | undefined>;
         Relationships: [];
       };
+      match_dismissals: {
+        Row: {
+          id: string;
+          lost_id: string;
+          found_id: string;
+          dismissed_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          lost_id: string;
+          found_id: string;
+          dismissed_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["match_dismissals"]["Row"]>;
+        Relationships: [];
+      };
       app_settings: {
         Row: {
           id: string;
@@ -251,7 +269,16 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      confirm_item_match: {
+        Args: { p_lost_id: string; p_found_id: string };
+        Returns: Json;
+      };
+      unmatch_item_match: {
+        Args: { p_lost_id: string; p_found_id: string };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

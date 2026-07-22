@@ -99,6 +99,7 @@ export default function NfcMyTagsPage() {
 
     try {
       let lostItemId: string | undefined;
+      let matchHint = "";
       if (createLost) {
         const trackingCode = generateTrackingCode();
         lostItemId = await addLostItem({
@@ -120,11 +121,22 @@ export default function NfcMyTagsPage() {
           user?.email ?? undefined,
           user?.displayName ?? undefined
         );
-        await fetch("/api/match", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "lost", itemId: lostItemId }),
-        });
+        try {
+          const matchResponse = await fetch("/api/match", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "lost", itemId: lostItemId }),
+          });
+          if (matchResponse.ok) {
+            const matchData = await matchResponse.json();
+            const count = Array.isArray(matchData.matches) ? matchData.matches.length : 0;
+            if (count > 0) {
+              matchHint = ` พบของเจอที่อาจตรงกัน ${count} รายการ — ดูได้จากติดตามสถานะหรือให้เจ้าหน้าที่จับคู่`;
+            }
+          }
+        } catch {
+          // Suggest is best-effort after create
+        }
       }
 
       await updateNfcTagStatusApi(tag.id, "lost", lostItemId);
@@ -132,7 +144,7 @@ export default function NfcMyTagsPage() {
       await showAlert({
         title: "แจ้งของหายแล้ว",
         message: createLost
-          ? "สถานะ Tag อัปเดตแล้ว และสร้างรายการ Lost แล้ว"
+          ? `สถานะ Tag อัปเดตแล้ว และสร้างรายการ Lost แล้ว${matchHint}`
           : "สถานะ Tag เป็น 'แจ้งของหายแล้ว'",
       });
     } catch (err) {

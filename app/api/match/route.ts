@@ -1,14 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getLostItems, getFoundItems, getAppSettings } from '@/lib/database';
-import { 
-  findMatchesForLostItem, 
-  findMatchesForFoundItem, 
-  findMatchesForLostItemAI,
-  findMatchesForFoundItemAI,
-  getMatchConfidence 
-} from '@/lib/matching';
 import { parseJsonBody } from "@/lib/parse-request";
+import {
+  getAppSettingsAdmin,
+  serializeMatchForJson,
+  suggestForItem,
+} from "@/lib/match-service";
+import { optionalMatchAuth } from "@/lib/match-auth";
 
 const matchBodySchema = z.object({
   type: z.enum(["lost", "found"]),
@@ -16,9 +14,15 @@ const matchBodySchema = z.object({
   useAI: z.boolean().optional().default(false),
 });
 
+/**
+ * Suggest matches for a single item (students + admin).
+ * Prefetches matchable candidates by status + date window — no full-table dump.
+ */
 export async function POST(request: NextRequest) {
   try {
-    const { expireOverdueFoundItemsAdmin } = await import("@/lib/found-handover-expiry-server");
+    const { expireOverdueFoundItemsAdmin } = await import(
+      "@/lib/found-handover-expiry-server"
+    );
     await expireOverdueFoundItemsAdmin();
 
     const parsed = await parseJsonBody(request, matchBodySchema);
@@ -27,68 +31,26 @@ export async function POST(request: NextRequest) {
     }
 
     const { type, itemId, useAI } = parsed.data;
+    const authUser = await optionalMatchAuth(request);
 
-    // Fetch all items
-    const [allLostItems, allFoundItems] = await Promise.all([
-      getLostItems(),
-      getFoundItems(),
-    ]);
+    // Soft auth: prefer authenticated callers; still allow public suggest for post-submit UX
+    // but never expose PII beyond item fields already public via RLS select.
+    void authUser;
 
-    let matches;
-
-    const aiSettings = useAI ? await getAppSettings() : null;
-    const aiConfig = aiSettings
-      ? {
-          model: aiSettings.aiMatchingModel,
-          temperature: aiSettings.aiMatchingTemperature,
-          topP: aiSettings.aiMatchingTopP,
-          maxOutputTokens: aiSettings.aiMatchingMaxOutputTokens,
-        }
-      : undefined;
-
-    if (type === 'lost') {
-      const lostItem = allLostItems.find(item => item.id === itemId);
-      if (!lostItem) {
-        return NextResponse.json(
-          { error: 'Lost item not found' },
-          { status: 404 }
-        );
-      }
-      // Use AI matching if requested
-      matches = useAI 
-        ? await findMatchesForLostItemAI(lostItem, allFoundItems, 5, aiConfig)
-        : findMatchesForLostItem(lostItem, allFoundItems);
-    } else {
-      const foundItem = allFoundItems.find(item => item.id === itemId);
-      if (!foundItem) {
-        return NextResponse.json(
-          { error: 'Found item not found' },
-          { status: 404 }
-        );
-      }
-      // Use AI matching if requested
-      matches = useAI
-        ? await findMatchesForFoundItemAI(foundItem, allLostItems, 5, aiConfig)
-        : findMatchesForFoundItem(foundItem, allLostItems);
-    }
-
-    // Format matches for response
-    const formattedMatches = matches.map(match => ({
-      ...match,
-      confidence: getMatchConfidence(match.score),
-      scorePercentage: Math.round(match.score * 100),
-    }));
+    const settings = useAI ? await getAppSettingsAdmin() : null;
+    const matches = await suggestForItem({ type, itemId, useAI, settings });
 
     return NextResponse.json({
-      matches: formattedMatches,
-      total: formattedMatches.length,
+      matches: matches.map(serializeMatchForJson),
+      total: matches.length,
       useAI,
     });
   } catch (error) {
-    console.error('Error in Match API:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "unknown";
+    if (message === "LOST_NOT_FOUND" || message === "FOUND_NOT_FOUND") {
+      return NextResponse.json({ error: "Item not found" }, { status: 404 });
+    }
+    console.error("Error in Match API:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

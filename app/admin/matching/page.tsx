@@ -1,669 +1,488 @@
 "use client";
 
-// Force dynamic rendering for security
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import {
-    Search,
-    CheckCircle,
-    XCircle,
-    Loader2,
-    Package,
-    MapPin,
-    Calendar,
-    ArrowRight,
-    Sparkles,
-    AlertCircle,
-    Eye,
-    Zap,
-    RefreshCw,
-} from "lucide-react";
-import { cn, formatThaiDate } from "@/lib/utils";
-import { findMatchesForLostItem, findMatchesForFoundItem, MatchScore } from "@/lib/matching";
-import { logItemMatched } from "@/lib/logger";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useAppDialog } from "@/hooks/use-app-dialog";
 import { useCategories } from "@/contexts/DataContext";
-import type { LostItem, FoundItem } from "@/lib/types";
-import { subscribeToLostItems, subscribeToFoundItems, updateLostItem, updateFoundItem } from "@/lib/database";
+import {
+  MATCHABLE_FOUND_STATUSES,
+  MATCHABLE_LOST_STATUSES,
+} from "@/lib/matching";
+import {
+  confirmMatchApi,
+  fetchItemMatches,
+  fetchMatchBatch,
+  rejectMatchApi,
+  unmatchPairApi,
+  type AdminMatchPair,
+  type ConfirmedHistoryPair,
+  type MatchBatchResponse,
+} from "@/lib/match-admin-client";
+import { subscribeToFoundItems, subscribeToLostItems } from "@/lib/database";
+import type { FoundItem, LostItem } from "@/lib/types";
+import { MatchReviewQueue } from "@/components/admin/matching/match-review-queue";
+import { ManualMatchPanel } from "@/components/admin/matching/manual-match-panel";
+import { MatchedHistoryList } from "@/components/admin/matching/matched-history-list";
 
-// Confidence colors
-const CONFIDENCE_COLORS = {
-    high: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-600 dark:text-green-400", label: "สูง" },
-    medium: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-600 dark:text-yellow-400", label: "ปานกลาง" },
-    low: { bg: "bg-gray-100 dark:bg-gray-700", text: "text-gray-600 dark:text-gray-400", label: "ต่ำ" },
-};
+type Tab = "queue" | "manual" | "history";
+type ConfidenceFilter = "all" | "high" | "medium" | "low";
 
-// Extended match with display info
-interface DisplayMatch extends MatchScore {
-    key: string;
+/** Avoid refetching when remounting / focus churn within TTL */
+const BATCH_CACHE_TTL_MS = 60_000;
+let batchCache: {
+  key: string;
+  data: MatchBatchResponse;
+  at: number;
+} | null = null;
+
+function batchCacheKey(userId: string, useAI: boolean) {
+  return `${userId}:${useAI ? "ai" : "plain"}`;
 }
 
 export default function AdminMatchingPage() {
-    const { user } = useAuth();
-    const { showAlert, dialog } = useAppDialog();
-    const { getCategoryByValue } = useCategories();
-    const [activeTab, setActiveTab] = useState<"lost" | "found">("lost");
-    const [lostItems, setLostItems] = useState<LostItem[]>([]);
-    const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
+  const { showAlert, showConfirm, dialog } = useAppDialog();
+  const { getCategoryByValue } = useCategories();
 
-    // View mode: 'select' (old) or 'auto' (new auto-matching)
-    const [viewMode, setViewMode] = useState<"select" | "auto">("auto");
+  const [tab, setTab] = useState<Tab>("queue");
+  const [useAI, setUseAI] = useState(false);
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
 
-    // Auto-matching state
-    const [allMatches, setAllMatches] = useState<DisplayMatch[]>([]);
-    const [loadingAutoMatch, setLoadingAutoMatch] = useState(false);
-    const [confidenceFilter, setConfidenceFilter] = useState<"all" | "high" | "medium" | "low">("all");
+  const [matches, setMatches] = useState<AdminMatchPair[]>([]);
+  const [history, setHistory] = useState<ConfirmedHistoryPair[]>([]);
+  const [pool, setPool] = useState({ lost: 0, found: 0, highConfidence: 0 });
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [loadingBatch, setLoadingBatch] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [historyBusyKey, setHistoryBusyKey] = useState<string | null>(null);
 
-    // Selected item for matching (select mode)
-    const [selectedItem, setSelectedItem] = useState<LostItem | FoundItem | null>(null);
-    const [matches, setMatches] = useState<MatchScore[]>([]);
-    const [loadingMatches, setLoadingMatches] = useState(false);
-    const [confirmingMatch, setConfirmingMatch] = useState<string | null>(null);
-    const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [lostItems, setLostItems] = useState<LostItem[]>([]);
+  const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
+  const [loadingPoolItems, setLoadingPoolItems] = useState(true);
 
-    // Load items
-    useEffect(() => {
-        let gotLost = false;
-        let gotFound = false;
-        const checkLoaded = () => {
-            if (gotLost && gotFound) setLoading(false);
-        };
+  const [selectedItem, setSelectedItem] = useState<LostItem | FoundItem | null>(null);
+  const [manualMatches, setManualMatches] = useState<AdminMatchPair[]>([]);
+  const [loadingManual, setLoadingManual] = useState(false);
 
-        const unsubLost = subscribeToLostItems((items) => {
-            setLostItems(items.filter((item) => item.status === "searching"));
-            gotLost = true;
-            checkLoaded();
+  const userRef = useRef(user);
+  userRef.current = user;
+  const showAlertRef = useRef(showAlert);
+  showAlertRef.current = showAlert;
+  const useAIRef = useRef(useAI);
+  useAIRef.current = useAI;
+
+  const getToken = useCallback(async () => {
+    const current = userRef.current;
+    if (!current) throw new Error("Not authenticated");
+    return current.getIdToken();
+  }, []);
+
+  const getCategoryIcon = useCallback(
+    (category?: string) => getCategoryByValue(category || "other")?.icon || "📦",
+    [getCategoryByValue]
+  );
+
+  const applyBatchData = useCallback((data: MatchBatchResponse) => {
+    setMatches(data.matches || []);
+    setPool(data.pool || { lost: 0, found: 0, highConfidence: 0 });
+    setHistory(data.history || []);
+    setActiveKey((prev) => {
+      if (prev && data.matches.some((m) => m.key === prev)) return prev;
+      return data.matches[0]?.key ?? null;
+    });
+  }, []);
+
+  const loadBatch = useCallback(
+    async (options?: { force?: boolean }) => {
+      const currentUser = userRef.current;
+      if (!currentUser?.uid) return;
+
+      const key = batchCacheKey(currentUser.uid, useAIRef.current);
+      const cached = batchCache;
+      if (
+        !options?.force &&
+        cached &&
+        cached.key === key &&
+        Date.now() - cached.at < BATCH_CACHE_TTL_MS
+      ) {
+        applyBatchData(cached.data);
+        setLoadingBatch(false);
+        return;
+      }
+
+      // Only show full spinner on first load / forced refresh without warm cache
+      if (options?.force || !cached || cached.key !== key) {
+        setLoadingBatch(true);
+      }
+
+      try {
+        const data = await fetchMatchBatch(getToken, { useAI: useAIRef.current });
+        batchCache = { key, data, at: Date.now() };
+        applyBatchData(data);
+      } catch (error) {
+        console.error(error);
+        void showAlertRef.current({
+          title: "โหลดคิวไม่สำเร็จ",
+          message: error instanceof Error ? error.message : "เกิดข้อผิดพลาด",
+          variant: "error",
         });
+      } finally {
+        setLoadingBatch(false);
+      }
+    },
+    [applyBatchData, getToken]
+  );
 
-        const unsubFound = subscribeToFoundItems((items) => {
-            setFoundItems(items.filter((item) => item.status === "found"));
-            gotFound = true;
-            checkLoaded();
-        });
+  // Fetch once per user + AI mode — not on tab focus / auth object churn
+  useEffect(() => {
+    if (!user?.uid) return;
+    void loadBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only userId + useAI
+  }, [user?.uid, useAI]);
 
-        return () => {
-            unsubLost();
-            unsubFound();
-        };
-    }, []);
-
-    // Auto-match all items when data changes
-    const runAutoMatch = useCallback(() => {
-        if (allMatches.length === 0) setLoadingAutoMatch(true);
-
-        // Run matching in next tick for better UX
-        setTimeout(() => {
-            const matchResults: DisplayMatch[] = [];
-            const seenPairs = new Set<string>();
-
-            // Find matches for all lost items
-            for (const lostItem of lostItems) {
-                const itemMatches = findMatchesForLostItem(lostItem, foundItems);
-                for (const match of itemMatches) {
-                    const key = `${match.lostItem.id}_${match.foundItem.id}`;
-                    if (!seenPairs.has(key)) {
-                        seenPairs.add(key);
-                        matchResults.push({ ...match, key });
-                    }
-                }
-            }
-
-            // Sort by score descending
-            matchResults.sort((a, b) => b.score - a.score);
-            setAllMatches(matchResults);
-            setLoadingAutoMatch(false);
-        }, 100);
-    }, [allMatches.length, lostItems, foundItems]);
-
-    // Run auto-match when items change
-    useEffect(() => {
-        if (!loading && lostItems.length > 0 && foundItems.length > 0) {
-            runAutoMatch();
-        } else if (!loading) {
-            setAllMatches([]);
-            setLoadingAutoMatch(false);
-        }
-    }, [loading, lostItems.length, foundItems.length, runAutoMatch]);
-
-    // Filter matches by confidence
-    const filteredAutoMatches = useMemo(() => {
-        if (confidenceFilter === "all") return allMatches;
-        return allMatches.filter(m => m.confidence === confidenceFilter);
-    }, [allMatches, confidenceFilter]);
-
-    // Find matches when item is selected
-    const handleSelectItem = (item: LostItem | FoundItem) => {
-        setSelectedItem(item);
-        setLoadingMatches(true);
-
-        // Run matching algorithm
-        setTimeout(() => {
-            if (activeTab === "lost") {
-                const lostItem = item as LostItem;
-                const matchResults = findMatchesForLostItem(lostItem, foundItems);
-                setMatches(matchResults);
-            } else {
-                const foundItem = item as FoundItem;
-                const matchResults = findMatchesForFoundItem(foundItem, lostItems);
-                setMatches(matchResults);
-            }
-            setLoadingMatches(false);
-        }, 100); // Small delay for UX
+  useEffect(() => {
+    let gotLost = false;
+    let gotFound = false;
+    const done = () => {
+      if (gotLost && gotFound) setLoadingPoolItems(false);
     };
 
-    // Confirm match
-    const handleConfirmMatch = async (matchScore: MatchScore) => {
-
-        const lostId = matchScore.lostItem.id;
-        const foundId = matchScore.foundItem.id;
-
-        // Prevent double matching
-        if (processingIds.has(lostId) || processingIds.has(foundId)) return;
-
-        setConfirmingMatch(`${lostId}_${foundId}`);
-        setProcessingIds(prev => new Set(prev).add(lostId).add(foundId));
-
-        try {
-            // Update both items with matched IDs
-            await updateLostItem(lostId, {
-                matchedFoundId: foundId,
-                status: "found",
-            });
-
-            await updateFoundItem(foundId, {
-                matchedLostId: lostId,
-                status: "claimed",
-            });
-
-            // Log the match
-            await logItemMatched(
-                lostId,
-                matchScore.lostItem.itemName,
-                foundId,
-                matchScore.foundItem.description.substring(0, 50),
-                user?.email || undefined
-            );
-
-            // Reset selection
-            setSelectedItem(null);
-            setMatches([]);
-            void showAlert({
-                title: "จับคู่สำเร็จ",
-                message: "อัปเดตสถานะรายการเป็นคืนของแล้ว",
-                variant: "success",
-            });
-        } catch (error) {
-            console.error("Error confirming match:", error);
-            void showAlert({
-                title: "จับคู่ไม่สำเร็จ",
-                message: "เกิดข้อผิดพลาด",
-                variant: "error",
-            });
-            // Clear processing IDs on error
-            setProcessingIds(prev => {
-                const next = new Set(prev);
-                next.delete(lostId);
-                next.delete(foundId);
-                return next;
-            });
-        } finally {
-            setConfirmingMatch(null);
-            // We don't remove from processingIds immediately if successful because they will be removed from the list anyway
-            // But if error, we must remove them to allow retry
-            if (activeTab) { // Just a dummy check, we want to clear on error mostly, but clearing always is safer if list doesn't update fast enough?
-                // Actually, if we clear immediately, user might click again before list update.
-                // Better to clear only on error, OR let the list update clear them?
-                // Since they vanish from list, clearing isn't strictly necessary for success case.
-                // But let's clear on error.
-            }
-        }
-    };
-
-    // Filter items by search
-    const filteredItems = (activeTab === "lost" ? lostItems : foundItems).filter((item) => {
-        const searchLower = searchQuery.toLowerCase();
-        if (!searchLower) return true;
-        return (
-            item.trackingCode?.toLowerCase().includes(searchLower) ||
-            item.itemName?.toLowerCase().includes(searchLower) ||
-            item.description?.toLowerCase().includes(searchLower) ||
-            (activeTab === "lost"
-              ? (item as LostItem).locationLost
-              : (item as FoundItem).locationFound
-            )?.toLowerCase().includes(searchLower)
-        );
+    const unsubLost = subscribeToLostItems((items) => {
+      setLostItems(
+        items.filter(
+          (item) =>
+            (MATCHABLE_LOST_STATUSES as readonly string[]).includes(item.status) &&
+            !item.matchedFoundId
+        )
+      );
+      gotLost = true;
+      done();
     });
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="w-8 h-8 animate-spin text-[#06C755]" />
-            </div>
-        );
+    const unsubFound = subscribeToFoundItems((items) => {
+      setFoundItems(
+        items.filter(
+          (item) =>
+            (MATCHABLE_FOUND_STATUSES as readonly string[]).includes(item.status) &&
+            !item.matchedLostId
+        )
+      );
+      gotFound = true;
+      done();
+    });
+
+    return () => {
+      unsubLost();
+      unsubFound();
+    };
+  }, []);
+
+  const filteredMatches = useMemo(() => {
+    if (confidenceFilter === "all") return matches;
+    return matches.filter((m) => m.confidence === confidenceFilter);
+  }, [matches, confidenceFilter]);
+
+  useEffect(() => {
+    if (filteredMatches.length === 0) {
+      setActiveKey(null);
+      return;
     }
+    if (!activeKey || !filteredMatches.some((m) => m.key === activeKey)) {
+      setActiveKey(filteredMatches[0].key);
+    }
+  }, [filteredMatches, activeKey]);
 
-    return (
-        <div className="p-4 lg:p-6 space-y-6">
-            {/* Header */}
-            <div className="flex items-start justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Sparkles className="w-6 h-6 text-[#06C755]" />
-                        Matching
-                    </h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-1">
-                        จับคู่ของหายกับของเจอ ด้วย AI-assisted matching
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setViewMode("auto")}
-                        className={cn(
-                            "px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2",
-                            viewMode === "auto"
-                                ? "bg-[#06C755] text-white"
-                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                        )}
-                    >
-                        <Zap className="w-4 h-4" />
-                        Auto Match
-                    </button>
-                    <button
-                        onClick={() => setViewMode("select")}
-                        className={cn(
-                            "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                            viewMode === "select"
-                                ? "bg-[#06C755] text-white"
-                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                        )}
-                    >
-                        เลือกเอง
-                    </button>
-                </div>
-            </div>
+  const advanceQueue = useCallback(
+    (removedKey: string) => {
+      setMatches((prev) => {
+        const next = prev.filter((m) => m.key !== removedKey);
+        const idx = prev.findIndex((m) => m.key === removedKey);
+        const fallback = next[idx] || next[idx - 1] || next[0] || null;
+        setActiveKey(fallback?.key ?? null);
+        return next;
+      });
+    },
+    []
+  );
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-4">
-                    <p className="text-sm text-red-600 dark:text-red-400">ของหายรอจับคู่</p>
-                    <p className="text-2xl font-bold text-red-700 dark:text-red-300">{lostItems.length}</p>
-                </div>
-                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4">
-                    <p className="text-sm text-green-600 dark:text-green-400">ของเจอรอจับคู่</p>
-                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">{foundItems.length}</p>
-                </div>
-                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4">
-                    <p className="text-sm text-purple-600 dark:text-purple-400">คู่ที่อาจตรงกัน</p>
-                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{allMatches.length}</p>
-                </div>
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4">
-                    <p className="text-sm text-yellow-600 dark:text-yellow-400">ความมั่นใจสูง</p>
-                    <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
-                        {allMatches.filter(m => m.confidence === "high").length}
-                    </p>
-                </div>
-            </div>
+  const activeMatch =
+    filteredMatches.find((m) => m.key === activeKey) || filteredMatches[0] || null;
 
-            {/* Auto Match View */}
-            {viewMode === "auto" && (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                    {/* Header with filters */}
-                    <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                                <Zap className="w-5 h-5 text-purple-500" />
-                                คู่ที่อาจตรงกันทั้งหมด
-                            </h2>
-                            <div className="flex gap-1">
-                                {(["all", "high", "medium", "low"] as const).map((level) => (
-                                    <button
-                                        key={level}
-                                        onClick={() => setConfidenceFilter(level)}
-                                        className={cn(
-                                            "px-2 py-1 rounded text-xs font-medium transition-colors",
-                                            confidenceFilter === level
-                                                ? level === "high" ? "bg-green-500 text-white"
-                                                    : level === "medium" ? "bg-yellow-500 text-white"
-                                                        : level === "low" ? "bg-gray-500 text-white"
-                                                            : "bg-[#06C755] text-white"
-                                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                                        )}
-                                    >
-                                        {level === "all" ? "ทั้งหมด" : level === "high" ? "สูง" : level === "medium" ? "กลาง" : "ต่ำ"}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <button
-                            onClick={runAutoMatch}
-                            disabled={loadingAutoMatch}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
-                        >
-                            <RefreshCw className={cn("w-4 h-4", loadingAutoMatch && "animate-spin")} />
-                            รีเฟรช
-                        </button>
-                    </div>
+  const invalidateBatchCache = useCallback(() => {
+    batchCache = null;
+  }, []);
 
-                    {/* Match List */}
-                    <div className="max-h-[600px] overflow-y-auto">
-                        {loadingAutoMatch ? (
-                            <div className="p-8 text-center">
-                                <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
-                                <p className="text-gray-500">กำลังค้นหาการจับคู่...</p>
-                            </div>
-                        ) : filteredAutoMatches.length === 0 ? (
-                            <div className="p-8 text-center text-gray-500">
-                                <XCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                <p>ไม่พบรายการที่ตรงกัน</p>
-                                <p className="text-xs mt-1">ระบบจะแสดงเมื่อมีรายการที่คล้ายกัน</p>
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                {filteredAutoMatches.map((match) => {
-                                    const confidenceConfig = CONFIDENCE_COLORS[match.confidence];
-                                    const isConfirming = confirmingMatch === match.key;
-                                    const isLocked = processingIds.has(match.lostItem.id) || processingIds.has(match.foundItem.id);
+  const handleConfirm = async (match: AdminMatchPair) => {
+    setBusy(true);
+    try {
+      await confirmMatchApi(getToken, match.lostItem.id, match.foundItem.id);
+      invalidateBatchCache();
+      advanceQueue(match.key);
+      setHistory((prev) => [
+        {
+          key: match.key,
+          lostItem: match.lostItem,
+          foundItem: match.foundItem,
+          matchedAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setPool((p) => ({
+        ...p,
+        lost: Math.max(0, p.lost - 1),
+        found: Math.max(0, p.found - 1),
+      }));
+      void showAlert({
+        title: "จับคู่สำเร็จ",
+        message: "อัปเดตสถานะเป็นพร้อมให้เจ้าของมารับแล้ว",
+        variant: "success",
+      });
+    } catch (error) {
+      void showAlert({
+        title: "จับคู่ไม่สำเร็จ",
+        message: error instanceof Error ? error.message : "เกิดข้อผิดพลาด",
+        variant: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
-                                    return (
-                                        <div key={match.key} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                            {/* Match pair header */}
-                                            <div className="flex items-center justify-between mb-3">
-                                                <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", confidenceConfig.bg, confidenceConfig.text)}>
-                                                    {Math.round(match.score * 100)}% {confidenceConfig.label}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleConfirmMatch(match)}
-                                                    disabled={isConfirming || isLocked}
-                                                    className={cn(
-                                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                                                        isLocked && !isConfirming ? "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500" : "bg-[#06C755] text-white hover:bg-[#05b34d]"
-                                                    )}
-                                                >
-                                                    {isConfirming ? (
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                    ) : (
-                                                        <CheckCircle className="w-4 h-4" />
-                                                    )}
-                                                    ยืนยันจับคู่
-                                                </button>
-                                            </div>
+  const handleReject = async (match: AdminMatchPair) => {
+    setBusy(true);
+    try {
+      await rejectMatchApi(getToken, match.lostItem.id, match.foundItem.id);
+      invalidateBatchCache();
+      advanceQueue(match.key);
+    } catch (error) {
+      void showAlert({
+        title: "ปฏิเสธไม่สำเร็จ",
+        message: error instanceof Error ? error.message : "เกิดข้อผิดพลาด",
+        variant: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
-                                            {/* Two items side by side */}
-                                            <div className="grid grid-cols-2 gap-4">
-                                                {/* Lost Item */}
-                                                <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="text-lg">{getCategoryByValue(match.lostItem.category)?.icon || "📦"}</span>
-                                                        <span className="text-xs text-red-600 dark:text-red-400 font-medium">ของหาย</span>
-                                                    </div>
-                                                    <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
-                                                        {match.lostItem.itemName}
-                                                    </p>
-                                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                                                        <MapPin className="w-3 h-3" />
-                                                        <span className="truncate">{match.lostItem.locationLost}</span>
-                                                    </div>
-                                                    <p className="text-xs text-gray-400 mt-1">{match.lostItem.trackingCode}</p>
-                                                </div>
+  const handleSkip = () => {
+    if (!activeMatch || filteredMatches.length <= 1) return;
+    const idx = filteredMatches.findIndex((m) => m.key === activeMatch.key);
+    const next = filteredMatches[(idx + 1) % filteredMatches.length];
+    setActiveKey(next.key);
+  };
 
-                                                {/* Found Item */}
-                                                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-3">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="text-lg">📦</span>
-                                                        <span className="text-xs text-green-600 dark:text-green-400 font-medium">ของเจอ</span>
-                                                    </div>
-                                                    <p className="font-medium text-gray-900 dark:text-white text-sm truncate">
-                                                        {match.foundItem.description?.substring(0, 30)}...
-                                                    </p>
-                                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                                                        <MapPin className="w-3 h-3" />
-                                                        <span className="truncate">{match.foundItem.locationFound}</span>
-                                                    </div>
-                                                    <p className="text-xs text-gray-400 mt-1">{match.foundItem.trackingCode}</p>
-                                                </div>
-                                            </div>
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (tab !== "queue" || busy || !activeMatch) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const key = e.key.toLowerCase();
+      if (key === "c") {
+        e.preventDefault();
+        void handleConfirm(activeMatch);
+      } else if (key === "r") {
+        e.preventDefault();
+        void handleReject(activeMatch);
+      } else if (key === "s") {
+        e.preventDefault();
+        handleSkip();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers close over latest activeMatch via deps below
+  }, [tab, busy, activeMatch, filteredMatches]);
 
-                                            {/* Match reasons */}
-                                            {match.reasons.length > 0 && (
-                                                <div className="mt-3 flex flex-wrap gap-1">
-                                                    {match.reasons.map((reason, i) => (
-                                                        <span key={i} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-300">
-                                                            {reason}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+  const loadManualMatches = async (type: "lost" | "found", item: LostItem | FoundItem) => {
+    setSelectedItem(item);
+    setLoadingManual(true);
+    setManualMatches([]);
+    try {
+      const results = await fetchItemMatches(getToken, type, item.id, useAI);
+      setManualMatches(results);
+    } catch (error) {
+      void showAlert({
+        title: "ค้นหาคู่ไม่สำเร็จ",
+        message: error instanceof Error ? error.message : "เกิดข้อผิดพลาด",
+        variant: "error",
+      });
+    } finally {
+      setLoadingManual(false);
+    }
+  };
 
-            {/* Select Mode - Main Content */}
-            {viewMode === "select" && (
-                <div className="grid lg:grid-cols-2 gap-6">
-                    {/* Left: Item List */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                        {/* Tabs */}
-                        <div className="flex border-b border-gray-100 dark:border-gray-700">
-                            <button
-                                onClick={() => { setActiveTab("lost"); setSelectedItem(null); setMatches([]); }}
-                                className={cn(
-                                    "flex-1 py-3 px-4 text-sm font-medium transition-colors",
-                                    activeTab === "lost"
-                                        ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-b-2 border-red-500"
-                                        : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                )}
-                            >
-                                🔴 ของหาย ({lostItems.length})
-                            </button>
-                            <button
-                                onClick={() => { setActiveTab("found"); setSelectedItem(null); setMatches([]); }}
-                                className={cn(
-                                    "flex-1 py-3 px-4 text-sm font-medium transition-colors",
-                                    activeTab === "found"
-                                        ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-b-2 border-green-500"
-                                        : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                )}
-                            >
-                                🟢 ของเจอ ({foundItems.length})
-                            </button>
-                        </div>
+  const handleUnmatch = async (pair: ConfirmedHistoryPair) => {
+    const ok = await showConfirm({
+      title: "ถอนจับคู่นี้?",
+      message: "รายการจะกลับไปรอจับคู่ใหม่",
+    });
+    if (!ok) return;
+    setHistoryBusyKey(pair.key);
+    try {
+      await unmatchPairApi(getToken, pair.lostItem.id, pair.foundItem.id);
+      setHistory((prev) => prev.filter((h) => h.key !== pair.key));
+      await loadBatch({ force: true });
+      void showAlert({
+        title: "ถอนจับคู่แล้ว",
+        message: "รายการกลับสู่สถานะรอจับคู่",
+        variant: "success",
+      });
+    } catch (error) {
+      void showAlert({
+        title: "ถอนจับคู่ไม่สำเร็จ",
+        message: error instanceof Error ? error.message : "เกิดข้อผิดพลาด",
+        variant: "error",
+      });
+    } finally {
+      setHistoryBusyKey(null);
+    }
+  };
 
-                        {/* Search */}
-                        <div className="p-3 border-b border-gray-100 dark:border-gray-700">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="ค้นหา..."
-                                    className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#06C755] text-sm text-gray-900 dark:text-white"
-                                />
-                            </div>
-                        </div>
+  const summaryLine = `รอตรวจ ${filteredMatches.length} คู่ · มั่นใจสูง ${
+    matches.filter((m) => m.confidence === "high").length
+  } · ของหาย ${pool.lost} · ของเจอ ${pool.found}`;
 
-                        {/* Item List */}
-                        <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
-                            {filteredItems.length === 0 ? (
-                                <div className="p-8 text-center text-gray-500">
-                                    <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                    <p>ไม่พบรายการ</p>
-                                </div>
-                            ) : (
-                                filteredItems.map((item) => {
-                                    const isLost = activeTab === "lost";
-                                    const isSelected = selectedItem?.id === item.id;
+  return (
+    <div className="space-y-6 p-4 lg:p-6">
+      {dialog}
 
-                                    return (
-                                        <button
-                                            key={item.id}
-                                            onClick={() => handleSelectItem(item)}
-                                            className={cn(
-                                                "w-full p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors",
-                                                isSelected && "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500"
-                                            )}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <div className={cn(
-                                                    "w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0",
-                                                    isLost ? "bg-red-100 dark:bg-red-900/30" : "bg-green-100 dark:bg-green-900/30"
-                                                )}>
-                                                    {isLost ? (getCategoryByValue(item.category ?? "")?.icon || "📦") : "📦"}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-medium text-gray-900 dark:text-white truncate">
-                                                        {isLost ? item.itemName : item.description?.substring(0, 30) + "..."}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                                                        <MapPin className="w-3 h-3" />
-                                                        <span className="truncate">{isLost ? (item as LostItem).locationLost : (item as FoundItem).locationFound}</span>
-                                                    </div>
-                                                    <p className="text-xs text-gray-400 mt-1">{item.trackingCode}</p>
-                                                </div>
-                                                <ArrowRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                                            </div>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right: Match Results */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-                            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                                <Sparkles className="w-5 h-5 text-purple-500" />
-                                ผลการจับคู่
-                            </h2>
-                        </div>
-
-                        <div className="max-h-[500px] overflow-y-auto">
-                            {!selectedItem ? (
-                                <div className="p-8 text-center text-gray-500">
-                                    <AlertCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                    <p>เลือกรายการจากทางซ้ายเพื่อดูการจับคู่</p>
-                                </div>
-                            ) : loadingMatches ? (
-                                <div className="p-8 text-center">
-                                    <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
-                                    <p className="text-gray-500">กำลังค้นหาการจับคู่...</p>
-                                </div>
-                            ) : matches.length === 0 ? (
-                                <div className="p-8 text-center text-gray-500">
-                                    <XCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                    <p>ไม่พบรายการที่ตรงกัน</p>
-                                    <p className="text-xs mt-1">ระบบจะแสดงเมื่อมีรายการที่คล้ายกัน</p>
-                                </div>
-                            ) : (
-                                <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                    {matches.map((match, index) => {
-                                        const isLostTab = activeTab === "lost";
-                                        const displayItem = isLostTab ? match.foundItem : match.lostItem;
-                                        const confidenceConfig = CONFIDENCE_COLORS[match.confidence];
-                                        const matchKey = `${match.lostItem.id}_${match.foundItem.id}`;
-                                        const isConfirming = confirmingMatch === matchKey;
-
-                                        return (
-                                            <div key={index} className="p-4">
-                                                {/* Match Header */}
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", confidenceConfig.bg, confidenceConfig.text)}>
-                                                            {Math.round(match.score * 100)}% {confidenceConfig.label}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <button className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                                                            <Eye className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Match Item */}
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className={cn(
-                                                        "w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0",
-                                                        isLostTab ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30"
-                                                    )}>
-                                                        {isLostTab ? "📦" : (getCategoryByValue((displayItem as LostItem).category)?.icon || "📦")}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-medium text-gray-900 dark:text-white">
-                                                            {isLostTab ? (displayItem as FoundItem).description?.substring(0, 40) : (displayItem as LostItem).itemName}
-                                                        </p>
-                                                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                                                            <MapPin className="w-3 h-3" />
-                                                            <span>{isLostTab ? (displayItem as FoundItem).locationFound : (displayItem as LostItem).locationLost}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                                                            <Calendar className="w-3 h-3" />
-                                                            <span>{formatThaiDate(new Date(isLostTab ? (displayItem as FoundItem).dateFound : (displayItem as LostItem).dateLost))}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Match Reasons */}
-                                                {match.reasons.length > 0 && (
-                                                    <div className="mb-3">
-                                                        <p className="text-xs text-gray-500 mb-1">เหตุผล:</p>
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {match.reasons.map((reason, i) => (
-                                                                <span key={i} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-300">
-                                                                    {reason}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Score Bar */}
-                                                <div className="mb-3">
-                                                    <div className="w-full h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                                                        <div
-                                                            className={cn(
-                                                                "h-full rounded-full transition-all",
-                                                                match.confidence === "high" ? "bg-green-500" : match.confidence === "medium" ? "bg-yellow-500" : "bg-gray-400"
-                                                            )}
-                                                            style={{ width: `${match.score * 100}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                {/* Actions */}
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => handleConfirmMatch(match)}
-                                                        disabled={isConfirming}
-                                                        className="flex-1 py-2 px-4 bg-[#06C755] text-white rounded-lg font-medium hover:bg-[#05b34d] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                                                    >
-                                                        {isConfirming ? (
-                                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                                        ) : (
-                                                            <CheckCircle className="w-4 h-4" />
-                                                        )}
-                                                        ยืนยันจับคู่
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-            {dialog}
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-[#191919] dark:text-white">
+            <Sparkles className="h-6 w-6 text-[#06C755]" />
+            จับคู่รายการ
+          </h1>
+          <p className="mt-1 text-sm text-[#6B7280]">{summaryLine}</p>
         </div>
-    );
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs text-[#6B7280] dark:border-gray-600 dark:bg-gray-800">
+            <input
+              type="checkbox"
+              checked={useAI}
+              onChange={(e) => setUseAI(e.target.checked)}
+              className="rounded border-[#E5E7EB] text-[#06C755] focus:ring-[#06C755]"
+            />
+            ใช้ AI ช่วยจัดอันดับ
+          </label>
+          <button
+            type="button"
+            onClick={() => void loadBatch({ force: true })}
+            disabled={loadingBatch}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#6B7280] transition hover:bg-[#F7F8FA] disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loadingBatch && "animate-spin")} />
+            รีเฟรช
+          </button>
+        </div>
+      </header>
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            { id: "queue" as const, label: "คิวตรวจ" },
+            { id: "manual" as const, label: "เลือกเอง" },
+            { id: "history" as const, label: "จับคู่แล้ว" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "rounded-full px-4 py-2 text-sm font-medium transition",
+              tab === t.id
+                ? "bg-[#06C755] text-white"
+                : "bg-[#F7F8FA] text-[#6B7280] hover:bg-[#ECEEF1] dark:bg-gray-800 dark:text-gray-300"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "queue" ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-1">
+            {(["all", "high", "medium", "low"] as const).map((level) => (
+              <button
+                key={level}
+                type="button"
+                onClick={() => setConfidenceFilter(level)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-xs font-medium",
+                  confidenceFilter === level
+                    ? "bg-[#191919] text-white dark:bg-white dark:text-[#191919]"
+                    : "bg-[#F7F8FA] text-[#6B7280] dark:bg-gray-800"
+                )}
+              >
+                {level === "all"
+                  ? "ทั้งหมด"
+                  : level === "high"
+                    ? "สูง"
+                    : level === "medium"
+                      ? "กลาง"
+                      : "ต่ำ"}
+              </button>
+            ))}
+          </div>
+
+          <MatchReviewQueue
+            matches={filteredMatches}
+            activeKey={activeKey}
+            busy={busy}
+            pool={pool}
+            loading={loadingBatch}
+            onSelect={setActiveKey}
+            onConfirm={() => activeMatch && void handleConfirm(activeMatch)}
+            onReject={() => activeMatch && void handleReject(activeMatch)}
+            onSkip={handleSkip}
+            getCategoryIcon={getCategoryIcon}
+          />
+        </div>
+      ) : null}
+
+      {tab === "manual" ? (
+        <ManualMatchPanel
+          lostItems={lostItems}
+          foundItems={foundItems}
+          loadingItems={loadingPoolItems}
+          loadingMatches={loadingManual}
+          matches={manualMatches}
+          selected={selectedItem}
+          busy={busy}
+          onSelectLost={(item) => void loadManualMatches("lost", item)}
+          onSelectFound={(item) => void loadManualMatches("found", item)}
+          onConfirm={async (match) => {
+            await handleConfirm(match);
+            setManualMatches((prev) => prev.filter((m) => m.key !== match.key));
+          }}
+          onReject={async (match) => {
+            await handleReject(match);
+            setManualMatches((prev) => prev.filter((m) => m.key !== match.key));
+          }}
+          getCategoryIcon={getCategoryIcon}
+        />
+      ) : null}
+
+      {tab === "history" ? (
+        loadingBatch ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-7 w-7 animate-spin text-[#06C755]" />
+          </div>
+        ) : (
+          <MatchedHistoryList
+            items={history}
+            busyKey={historyBusyKey}
+            onUnmatch={(pair) => void handleUnmatch(pair)}
+          />
+        )
+      ) : null}
+    </div>
+  );
 }

@@ -50,8 +50,40 @@ export interface MatchScore {
   confidence: 'high' | 'medium' | 'low';
 }
 
+/** Lost items eligible for matching */
+export const MATCHABLE_LOST_STATUSES = ["searching"] as const;
+
+/**
+ * Found items eligible for matching.
+ * Excludes `claimed` (already returned) and `expired`.
+ */
+export const MATCHABLE_FOUND_STATUSES = ["pending_room_confirm", "found"] as const;
+
+/** Max day gap between lost/found dates for a candidate pair */
+export const MATCH_TIME_WINDOW_DAYS = 30;
+
+/** Parallel Gemini compare calls in AI re-rank */
+export const AI_MATCH_CONCURRENCY = 3;
+
+export type MatchableLostStatus = (typeof MATCHABLE_LOST_STATUSES)[number];
+export type MatchableFoundStatus = (typeof MATCHABLE_FOUND_STATUSES)[number];
+
+export function isMatchableLostItem(item: Pick<LostItem, "status" | "matchedFoundId">): boolean {
+  return (
+    (MATCHABLE_LOST_STATUSES as readonly string[]).includes(item.status) &&
+    !item.matchedFoundId
+  );
+}
+
+export function isMatchableFoundItem(item: Pick<FoundItem, "status" | "matchedLostId">): boolean {
+  return (
+    (MATCHABLE_FOUND_STATUSES as readonly string[]).includes(item.status) &&
+    !item.matchedLostId
+  );
+}
+
 // Weights for different matching criteria (adjusted for better accuracy)
-const WEIGHTS = {
+export const MATCH_WEIGHTS = {
   categoryMatch: 0.20,      // Category is important indicator
   itemSimilarity: 0.35,     // Item name is most important
   locationSimilarity: 0.20, // Location helps narrow down
@@ -60,10 +92,13 @@ const WEIGHTS = {
 };
 
 // Thresholds for matching (balanced for accuracy)
-const MATCH_THRESHOLD = 0.40;       // Minimum score to be considered a match
-const HIGH_CONFIDENCE_THRESHOLD = 0.70;
-const MEDIUM_CONFIDENCE_THRESHOLD = 0.55;
-const MIN_REASONS_FOR_MATCH = 1;    // Must have at least 1 reason to be a valid match
+export const MATCH_THRESHOLD = 0.40;       // Minimum score to be considered a match
+export const HIGH_CONFIDENCE_THRESHOLD = 0.70;
+export const MEDIUM_CONFIDENCE_THRESHOLD = 0.55;
+export const MIN_REASONS_FOR_MATCH = 1;    // Must have at least 1 reason to be a valid match
+
+/** @deprecated Use MATCH_WEIGHTS */
+const WEIGHTS = MATCH_WEIGHTS;
 
 // Location keywords mapping for smart matching (expanded)
 const LOCATION_KEYWORDS: Record<string, string[]> = {
@@ -214,29 +249,78 @@ export function calculateMatchScore(lostItem: LostItem, foundItem: FoundItem): M
   }
   totalScore += timeScore * WEIGHTS.timeProximity;
 
-  // 6. Bonus for keyword matches (boost score for specific item types)
-  const itemText = `${lostItem.itemName} ${lostItem.description || ''}`.toLowerCase();
-  const foundText = foundItem.description.toLowerCase();
-  
-  // Check for brand/model matches
-  const brandPatterns = ['iphone', 'samsung', 'oppo', 'vivo', 'casio', 'seiko', 'nike', 'adidas', 'converse', 'apple', 'xiaomi'];
-  for (const brand of brandPatterns) {
-    if (itemText.includes(brand) && foundText.includes(brand)) {
-      totalScore += 0.1; // Bonus for matching brands
-      reasons.push(`ยี่ห้อตรงกัน (${brand})`);
-      break;
+  // 6. Brand / color — prefer structured found fields, then keyword fallback
+  const itemText = `${lostItem.itemName} ${lostItem.description || ""}`.toLowerCase();
+  const foundText =
+    `${foundItem.itemName || ""} ${foundItem.description} ${foundItem.brand || ""} ${foundItem.color || ""}`.toLowerCase();
+
+  const brandPatterns = [
+    "iphone",
+    "samsung",
+    "oppo",
+    "vivo",
+    "casio",
+    "seiko",
+    "nike",
+    "adidas",
+    "converse",
+    "apple",
+    "xiaomi",
+  ];
+  let brandMatched = false;
+  const structuredBrand = foundItem.brand?.trim();
+  if (structuredBrand) {
+    const brandLower = structuredBrand.toLowerCase();
+    if (itemText.includes(brandLower)) {
+      totalScore += 0.1;
+      reasons.push(`ยี่ห้อตรงกัน (${structuredBrand})`);
+      brandMatched = true;
+    }
+  }
+  if (!brandMatched) {
+    for (const brand of brandPatterns) {
+      if (itemText.includes(brand) && foundText.includes(brand)) {
+        totalScore += 0.1;
+        reasons.push(`ยี่ห้อตรงกัน (${brand})`);
+        break;
+      }
     }
   }
 
-  // Check for color matches
-  const colorPatterns = ['ดำ', 'ขาว', 'แดง', 'น้ำเงิน', 'เขียว', 'เหลือง', 'ชมพู', 'ม่วง', 'ส้ม', 'น้ำตาล', 'เทา', 'ทอง', 'เงิน'];
-  for (const color of colorPatterns) {
-    if (itemText.includes(color) && foundText.includes(color)) {
-      totalScore += 0.05; // Bonus for matching colors
-      if (!reasons.some(r => r.includes('สี'))) {
-        reasons.push(`สีตรงกัน (${color})`);
+  const colorPatterns = [
+    "ดำ",
+    "ขาว",
+    "แดง",
+    "น้ำเงิน",
+    "เขียว",
+    "เหลือง",
+    "ชมพู",
+    "ม่วง",
+    "ส้ม",
+    "น้ำตาล",
+    "เทา",
+    "ทอง",
+    "เงิน",
+  ];
+  let colorMatched = false;
+  const structuredColor = foundItem.color?.trim();
+  if (structuredColor) {
+    const colorLower = structuredColor.toLowerCase();
+    if (itemText.includes(colorLower)) {
+      totalScore += 0.05;
+      reasons.push(`สีตรงกัน (${structuredColor})`);
+      colorMatched = true;
+    }
+  }
+  if (!colorMatched) {
+    for (const color of colorPatterns) {
+      if (itemText.includes(color) && foundText.includes(color)) {
+        totalScore += 0.05;
+        if (!reasons.some((r) => r.includes("สี"))) {
+          reasons.push(`สีตรงกัน (${color})`);
+        }
+        break;
       }
-      break;
     }
   }
 
@@ -274,19 +358,12 @@ export function findMatchesForLostItem(
   lostItem: LostItem,
   foundItems: FoundItem[]
 ): MatchScore[] {
-  // Skip if item is not searching
-  if (lostItem.status !== 'searching' || lostItem.matchedFoundId) {
+  if (!isMatchableLostItem(lostItem)) {
     return [];
   }
 
-  // Step 1: Filter by status (found, claimed, or pending handover)
-  let candidates = foundItems.filter(
-    (f) =>
-      (f.status === "found" ||
-        f.status === "claimed" ||
-        f.status === "pending_room_confirm") &&
-      !f.matchedLostId
-  );
+  // Step 1: Filter by matchable found statuses (not claimed/expired)
+  let candidates = foundItems.filter((f) => isMatchableFoundItem(f));
 
   // Step 2: (Optional) Filter by category if known
   const lostCategory = lostItem.category;
@@ -301,12 +378,12 @@ export function findMatchesForLostItem(
     }
   }
 
-  // Step 3: Filter by time (within 30 days)
+  // Step 3: Filter by time window
   const lostDate = toDate(lostItem.dateLost).getTime();
   candidates = candidates.filter(f => {
     const foundDate = toDate(f.dateFound).getTime();
     const daysDiff = Math.abs(foundDate - lostDate) / (1000 * 60 * 60 * 24);
-    return daysDiff <= 30;
+    return daysDiff <= MATCH_TIME_WINDOW_DAYS;
   });
 
   // Step 4: Calculate scores for remaining candidates
@@ -330,20 +407,12 @@ export function findMatchesForFoundItem(
   foundItem: FoundItem,
   lostItems: LostItem[]
 ): MatchScore[] {
-  // Skip if item cannot be matched yet
-  if (
-    (foundItem.status !== "found" &&
-      foundItem.status !== "claimed" &&
-      foundItem.status !== "pending_room_confirm") ||
-    foundItem.matchedLostId
-  ) {
+  if (!isMatchableFoundItem(foundItem)) {
     return [];
   }
 
-  // Step 1: Filter by status (only searching items)
-  let candidates = lostItems.filter(l =>
-    l.status === 'searching' && !l.matchedFoundId
-  );
+  // Step 1: Filter by matchable lost statuses
+  let candidates = lostItems.filter((l) => isMatchableLostItem(l));
 
   // Step 2: (Optional) Filter by category if detectable
   const foundCategory = foundItem.category || detectCategoryFromText(foundItem.description);
@@ -356,12 +425,12 @@ export function findMatchesForFoundItem(
     }
   }
 
-  // Step 3: Filter by time (within 30 days)
+  // Step 3: Filter by time window
   const foundDate = toDate(foundItem.dateFound).getTime();
   candidates = candidates.filter(l => {
     const lostDate = toDate(l.dateLost).getTime();
     const daysDiff = Math.abs(foundDate - lostDate) / (1000 * 60 * 60 * 24);
-    return daysDiff <= 30;
+    return daysDiff <= MATCH_TIME_WINDOW_DAYS;
   });
 
   // Step 4: Calculate scores for remaining candidates
@@ -521,6 +590,31 @@ async function aiCompareItems(
 }
 
 /**
+ * Run async work over items with a fixed concurrency limit.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, concurrency);
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await mapper(items[current]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+/**
  * Find matches using AI for a lost item (limited to top candidates to save API calls)
  */
 export async function findMatchesForLostItemAI(
@@ -529,27 +623,32 @@ export async function findMatchesForLostItemAI(
   maxCandidates: number = 5,
   config?: AIGenerationConfig
 ): Promise<MatchScore[]> {
-  // First, use traditional matching to get top candidates
   const traditionalMatches = findMatchesForLostItem(lostItem, foundItems);
   const topCandidates = traditionalMatches.slice(0, maxCandidates);
 
-  // Then, use AI to re-evaluate top candidates
-  const aiMatches: MatchScore[] = [];
-  
-  for (const candidate of topCandidates) {
-    const aiResult = await aiCompareItems(lostItem, candidate.foundItem, config);
-    if (aiResult && aiResult.isMatch) {
-      aiMatches.push({
+  const evaluated = await mapWithConcurrency(
+    topCandidates,
+    AI_MATCH_CONCURRENCY,
+    async (candidate) => {
+      const aiResult = await aiCompareItems(lostItem, candidate.foundItem, config);
+      if (!aiResult || !aiResult.isMatch) return null;
+      return {
         lostItem,
         foundItem: candidate.foundItem,
         score: aiResult.score,
         reasons: aiResult.reasons.length > 0 ? aiResult.reasons : candidate.reasons,
-        confidence: aiResult.score >= 0.7 ? 'high' : aiResult.score >= 0.5 ? 'medium' : 'low',
-      });
+        confidence: (aiResult.score >= 0.7
+          ? "high"
+          : aiResult.score >= 0.5
+            ? "medium"
+            : "low") as MatchScore["confidence"],
+      } satisfies MatchScore;
     }
-  }
+  );
 
-  return aiMatches.sort((a, b) => b.score - a.score);
+  return evaluated
+    .filter((m): m is MatchScore => m !== null)
+    .sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -561,25 +660,30 @@ export async function findMatchesForFoundItemAI(
   maxCandidates: number = 5,
   config?: AIGenerationConfig
 ): Promise<MatchScore[]> {
-  // First, use traditional matching to get top candidates
   const traditionalMatches = findMatchesForFoundItem(foundItem, lostItems);
   const topCandidates = traditionalMatches.slice(0, maxCandidates);
 
-  // Then, use AI to re-evaluate top candidates
-  const aiMatches: MatchScore[] = [];
-  
-  for (const candidate of topCandidates) {
-    const aiResult = await aiCompareItems(candidate.lostItem, foundItem, config);
-    if (aiResult && aiResult.isMatch) {
-      aiMatches.push({
+  const evaluated = await mapWithConcurrency(
+    topCandidates,
+    AI_MATCH_CONCURRENCY,
+    async (candidate) => {
+      const aiResult = await aiCompareItems(candidate.lostItem, foundItem, config);
+      if (!aiResult || !aiResult.isMatch) return null;
+      return {
         lostItem: candidate.lostItem,
         foundItem,
         score: aiResult.score,
         reasons: aiResult.reasons.length > 0 ? aiResult.reasons : candidate.reasons,
-        confidence: aiResult.score >= 0.7 ? 'high' : aiResult.score >= 0.5 ? 'medium' : 'low',
-      });
+        confidence: (aiResult.score >= 0.7
+          ? "high"
+          : aiResult.score >= 0.5
+            ? "medium"
+            : "low") as MatchScore["confidence"],
+      } satisfies MatchScore;
     }
-  }
+  );
 
-  return aiMatches.sort((a, b) => b.score - a.score);
+  return evaluated
+    .filter((m): m is MatchScore => m !== null)
+    .sort((a, b) => b.score - a.score);
 }

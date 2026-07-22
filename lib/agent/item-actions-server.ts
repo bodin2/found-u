@@ -1,14 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  findMatchesForFoundItem,
-  findMatchesForLostItem,
-  getMatchConfidence,
-} from "@/lib/matching";
+import { suggestForItem } from "@/lib/match-service";
 import {
   mapFoundItemRow,
   mapLostItemRow,
 } from "@/lib/agent/row-mappers";
-import { searchItemsServer } from "@/lib/agent/item-queries-server";
 import { createFoundItemSchema, createLostItemSchema } from "@/lib/validations/items";
 import {
   DEFAULT_FOUND_DROP_OFF_LOCATION,
@@ -153,20 +148,19 @@ export async function reportLostItemServer(params: {
   if (error) throw error;
 
   const item = mapLostItemRow(inserted as Record<string, unknown>);
-  const { found } = await searchItemsServer({
-    query: item.itemName || item.description || "",
-    type: "found",
-    limit: 10,
+  const matches = await suggestForItem({
+    type: "lost",
+    itemId: item.id,
+    useAI: false,
   });
-  const matches = findMatchesForLostItem(item, found);
 
   return {
     ok: true,
     item,
     matches: matches.map((match) => ({
       score: match.score,
-      confidence: getMatchConfidence(match.score),
-      scorePercentage: Math.round(match.score * 100),
+      confidence: match.confidence,
+      scorePercentage: match.scorePercentage,
       reasons: match.reasons,
       lostItem: match.lostItem,
       foundItem: match.foundItem,
@@ -295,20 +289,19 @@ export async function reportFoundItemServer(
   if (error) throw error;
 
   const item = mapFoundItemRow(inserted as Record<string, unknown>);
-  const { lost } = await searchItemsServer({
-    query: item.itemName || item.description || "",
-    type: "lost",
-    limit: 10,
+  const matches = await suggestForItem({
+    type: "found",
+    itemId: item.id,
+    useAI: false,
   });
-  const matches = findMatchesForFoundItem(item, lost);
 
   return {
     ok: true,
     item,
     matches: matches.map((match) => ({
       score: match.score,
-      confidence: getMatchConfidence(match.score),
-      scorePercentage: Math.round(match.score * 100),
+      confidence: match.confidence,
+      scorePercentage: match.scorePercentage,
       reasons: match.reasons,
       lostItem: match.lostItem,
       foundItem: match.foundItem,

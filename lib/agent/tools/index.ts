@@ -1,12 +1,6 @@
 import { tool } from "ai";
 import { extractVisionData } from "@/lib/vision";
-import {
-  findMatchesForFoundItem,
-  findMatchesForLostItem,
-  findMatchesForFoundItemAI,
-  findMatchesForLostItemAI,
-  getMatchConfidence,
-} from "@/lib/matching";
+import { suggestForItem } from "@/lib/match-service";
 import {
   getFoundItemByIdServer,
   getLostItemByIdServer,
@@ -231,17 +225,10 @@ export function createAgentTools(options: {
 
     findMatches: tool({
       description:
-        "Match the caller's own lost/found item by item id — only for items the user owns.",
+        "Find likely matches for a lost/found item the caller owns. Compares against the campus catalog; contacts of other users stay privacy-redacted.",
       inputSchema: findMatchesToolSchema,
       execute: async (input): Promise<AgentToolEnvelope> => {
         try {
-          const aiConfig = {
-            model: settings.aiMatchingModel,
-            temperature: settings.aiMatchingTemperature,
-            topP: settings.aiMatchingTopP,
-            maxOutputTokens: settings.aiMatchingMaxOutputTokens,
-          };
-
           if (input.type === "lost") {
             const lostItem = await getLostItemByIdServer(input.itemId);
             if (!lostItem) {
@@ -263,68 +250,44 @@ export function createAgentTools(options: {
                 message: "ไม่มีสิทธิ์จับคู่รายการนี้",
               };
             }
-            const { found } = await searchItemsServer({
-              query: lostItem.itemName || lostItem.description || "",
-              type: "found",
-              limit: 10,
-              mode: "catalog",
-            });
-            const visibleFound = isAdmin
-              ? found
-              : found.filter((item) => isItemOwner(item.userId, userId));
-            const matches = input.useAI
-              ? await findMatchesForLostItemAI(lostItem, visibleFound, 5, aiConfig)
-              : findMatchesForLostItem(lostItem, visibleFound);
-            return {
-              ok: true,
-              resultType: "match",
-              data: matches.map((m) => ({
-                score: m.score,
-                confidence: getMatchConfidence(m.score),
-                scorePercentage: Math.round(m.score * 100),
-                reasons: m.reasons,
-                lostItem: serializeLostForViewer(m.lostItem, viewer),
-                foundItem: serializeFoundForViewer(m.foundItem, viewer),
-              })),
-            };
+          } else {
+            const foundItem = await getFoundItemByIdServer(input.itemId);
+            if (!foundItem) {
+              return {
+                ok: false,
+                resultType: "match",
+                data: [],
+                message: "ไม่พบรายการของเจอ",
+              };
+            }
+            if (!isAdmin && !isItemOwner(foundItem.userId, userId)) {
+              logPrivacyAction("findMatches_forbidden", userId, "not_owner", {
+                itemId: input.itemId,
+              });
+              return {
+                ok: false,
+                resultType: "match",
+                data: [],
+                message: "ไม่มีสิทธิ์จับคู่รายการนี้",
+              };
+            }
           }
 
-          const foundItem = await getFoundItemByIdServer(input.itemId);
-          if (!foundItem) {
-            return {
-              ok: false,
-              resultType: "match",
-              data: [],
-              message: "ไม่พบรายการของเจอ",
-            };
-          }
-          if (!isAdmin && !isItemOwner(foundItem.userId, userId)) {
-            logPrivacyAction("findMatches_forbidden", userId, "not_owner", {
-              itemId: input.itemId,
-            });
-            return {
-              ok: false,
-              resultType: "match",
-              data: [],
-              message: "ไม่มีสิทธิ์จับคู่รายการนี้",
-            };
-          }
-          const { lost } = await searchItemsServer({
-            query: foundItem.itemName || foundItem.description || "",
-            type: "lost",
-            limit: 10,
-            mode: "agent",
+          // Cross-user catalog matching via shared match service; serialize for privacy.
+          const matches = await suggestForItem({
+            type: input.type,
+            itemId: input.itemId,
+            useAI: Boolean(input.useAI),
+            settings,
           });
-          const matches = input.useAI
-            ? await findMatchesForFoundItemAI(foundItem, lost, 5, aiConfig)
-            : findMatchesForFoundItem(foundItem, lost);
+
           return {
             ok: true,
             resultType: "match",
             data: matches.map((m) => ({
               score: m.score,
-              confidence: getMatchConfidence(m.score),
-              scorePercentage: Math.round(m.score * 100),
+              confidence: m.confidence,
+              scorePercentage: m.scorePercentage,
               reasons: m.reasons,
               lostItem: serializeLostForViewer(m.lostItem, viewer),
               foundItem: serializeFoundForViewer(m.foundItem, viewer),
